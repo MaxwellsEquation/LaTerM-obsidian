@@ -339,42 +339,7 @@ export class SettingTab extends AdvancedSettingTab<Settings> {
 						() => { this.postMutate() },
 					))
 			})
-			.newSetting(containerEl, setting => {
-				setting
-					.setName(i18n.t("settings.preferred-renderer"))
-					.addDropdown(linkSetting(
-						(): string => settings.value.preferredRenderer,
-						setTextToEnum(
-							Settings.PREFERRED_RENDERER_OPTIONS,
-							async value => settings.mutate(settingsM => {
-								settingsM.preferredRenderer = value
-							}),
-						),
-						() => { this.postMutate() },
-						{
-							pre: dropdown => {
-								dropdown
-									.addOptions(Object
-										.fromEntries(Settings.PREFERRED_RENDERER_OPTIONS
-											.map(type => [
-												type,
-												i18n.t("settings.preferred-renderer-options", {
-													interpolation: { escapeValue: false },
-													type,
-												}),
-											])))
-							},
-						},
-					))
-					.addExtraButton(resetButton(
-						i18n.t("asset:settings.preferred-renderer-icon"),
-						i18n.t("settings.reset"),
-						async () => settings.mutate(settingsM => {
-							settingsM.preferredRenderer = Settings.DEFAULT.preferredRenderer
-						}),
-						() => { this.postMutate() },
-					))
-			})
+			// Renderer setting removed - DOM-only now
 	}
 
 	protected override snapshot0(): Partial<Settings> {

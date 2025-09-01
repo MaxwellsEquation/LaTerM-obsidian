@@ -46,7 +46,6 @@ import {
 import {
 	DisposerAddon,
 	DragAndDropAddon,
-	RendererAddon,
 	RightClickActionAddon,
 } from "./emulator-addons.js"
 import {
@@ -77,9 +76,6 @@ import { XtermTerminalEmulator } from "./emulator.js"
 import { writePromise } from "./util.js"
 
 const
-	xtermAddonCanvas =
-		dynamicRequire<typeof import("@xterm/addon-canvas")>(
-			BUNDLE, "@xterm/addon-canvas"),
 	xtermAddonLigatures =
 		dynamicRequire<typeof import("@xterm/addon-ligatures")>(
 			BUNDLE, "@xterm/addon-ligatures"),
@@ -91,10 +87,7 @@ const
 			BUNDLE, "@xterm/addon-unicode11"),
 	xtermAddonWebLinks =
 		dynamicRequire<typeof import("@xterm/addon-web-links")>(
-			BUNDLE, "@xterm/addon-web-links"),
-	xtermAddonWebgl =
-		dynamicRequire<typeof import("@xterm/addon-webgl")>(
-			BUNDLE, "@xterm/addon-webgl")
+			BUNDLE, "@xterm/addon-web-links")
 
 export class EditTerminalModal extends DialogModal {
 	protected readonly state
@@ -735,8 +728,6 @@ export class TerminalView extends ItemView {
 					const
 						[
 							// eslint-disable-next-line @typescript-eslint/naming-convention
-							{ CanvasAddon },
-							// eslint-disable-next-line @typescript-eslint/naming-convention
 							{ LigaturesAddon },
 							// eslint-disable-next-line @typescript-eslint/naming-convention
 							{ SearchAddon },
@@ -744,15 +735,11 @@ export class TerminalView extends ItemView {
 							{ Unicode11Addon },
 							// eslint-disable-next-line @typescript-eslint/naming-convention
 							{ WebLinksAddon },
-							// eslint-disable-next-line @typescript-eslint/naming-convention
-							{ WebglAddon },
 						] = await Promise.all([
-							xtermAddonCanvas,
 							xtermAddonLigatures,
 							xtermAddonSearch,
 							xtermAddonUnicode11,
 							xtermAddonWebLinks,
-							xtermAddonWebgl,
 						]),
 						emulator = new TerminalView.EMULATOR(
 							ele,
@@ -816,10 +803,6 @@ export class TerminalView extends ItemView {
 								),
 								dragAndDrop: new DragAndDropAddon(ele),
 								ligatures: new LigaturesAddon({}),
-								renderer: new RendererAddon(
-									() => new CanvasAddon(),
-									() => new WebglAddon(false),
-								),
 								rightClickAction: new RightClickActionAddon(
 									profile.type === "invalid"
 										? void 0
@@ -835,7 +818,7 @@ export class TerminalView extends ItemView {
 							},
 						),
 						{ pseudoterminal, terminal, addons } = emulator,
-						{ disposer, renderer, search } = addons
+						{ disposer, search } = addons
 					pseudoterminal.then(async pty0 => pty0.onExit)
 						.then(code => {
 							notice2(
@@ -859,11 +842,7 @@ export class TerminalView extends ItemView {
 					terminal.onTitleChange(title => { this.title = title })
 
 					terminal.unicode.activeVersion = "11"
-					disposer.push(settings.onMutate(
-						settings0 => settings0.preferredRenderer,
-						cur => { renderer.use(cur) },
-					))
-					renderer.use(settings.value.preferredRenderer)
+					// DOM-only rendering now, no renderer switching needed
 					search.onDidChangeResults(results0 => {
 						const { resultIndex, resultCount } = results0,
 							results = resultIndex === -1 && resultCount > 0
@@ -905,7 +884,6 @@ export namespace TerminalView {
 		readonly disposer: DisposerAddon
 		readonly dragAndDrop: DragAndDropAddon
 		readonly ligatures: LigaturesAddon
-		readonly renderer: RendererAddon
 		readonly rightClickAction: RightClickActionAddon
 		readonly search: SearchAddon
 		readonly unicode11: Unicode11Addon

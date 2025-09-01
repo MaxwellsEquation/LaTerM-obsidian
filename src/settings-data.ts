@@ -87,7 +87,7 @@ export interface Settings extends PluginContext.Settings {
 
 	readonly exposeInternalModules: boolean
 	readonly interceptLogging: boolean
-	readonly preferredRenderer: Settings.PreferredRendererOption
+	// Renderer preference removed - DOM-only now
 }
 export namespace Settings {
 	export const optionals = deepFreeze([]) satisfies readonly (keyof Settings)[]
@@ -116,7 +116,6 @@ export namespace Settings {
 		noticeTimeout: 5,
 		openChangelogOnUpdate: true,
 		pinNewInstance: true,
-		preferredRenderer: "webgl",
 		profiles: Object.fromEntries(([
 			"darwinExternalDefault",
 			"darwinIntegratedDefault",
@@ -149,8 +148,7 @@ export namespace Settings {
 		deepFreeze(["never", "always", "focused", "running"])
 	export type HideStatusBarOption = typeof HIDE_STATUS_BAR_OPTIONS[number]
 
-	export const PREFERRED_RENDERER_OPTIONS = RendererAddon.RENDERER_OPTIONS
-	export type PreferredRendererOption = RendererAddon.RendererOption
+	// Renderer options removed - DOM-only now
 
 	export type Profile =
 		Profile.DeveloperConsole |
@@ -1245,12 +1243,7 @@ export namespace Settings {
 				"pinNewInstance",
 				["boolean"],
 			),
-			preferredRenderer: fixInSet(
-				DEFAULT,
-				unc,
-				"preferredRenderer",
-				PREFERRED_RENDERER_OPTIONS,
-			),
+			// Renderer preference removed - DOM-only now
 			profiles: ((): DeepWritable<Profiles> => {
 				const defaults2 = DEFAULT.profiles,
 					{ profiles } = unc
