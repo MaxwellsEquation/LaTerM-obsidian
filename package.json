@@ -1,7 +1,7 @@
 {
 	"author": "polyipseity",
 	"bugs": {
-		"url": "https://github.com/MaxwellsEquation/LaTerM/issues"
+		"url": "https://github.com/MaxwellsEquation/LaTerM-dev/issues"
 	},
 	"dependencies": {
 		"@polyipseity/obsidian-plugin-library": "^1.32.0",
@@ -81,7 +81,7 @@
 			"url": "https://github.com/sponsors/polyipseity"
 		}
 	],
-	"homepage": "https://github.com/MaxwellsEquation/LaTerM#readme",
+	"homepage": "https://github.com/MaxwellsEquation/LaTerM-dev#readme",
 	"keywords": [
 		"console",
 		"console-emulator",
@@ -114,7 +114,7 @@
 	"private": true,
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/MaxwellsEquation/LaTerM.git"
+		"url": "git+https://github.com/MaxwellsEquation/LaTerM-dev.git"
 	},
 	"scripts": {
 		"build": "npm run check && npm run build:force",
