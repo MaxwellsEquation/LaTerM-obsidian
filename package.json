@@ -1,7 +1,7 @@
 {
 	"author": "polyipseity",
 	"bugs": {
-		"url": "https://github.com/polyipseity/PLACEHOLDER"
+		"url": "https://github.com/MaxwellsEquation/LaTerM/issues"
 	},
 	"dependencies": {
 		"@polyipseity/obsidian-plugin-library": "^1.32.0",
@@ -81,7 +81,7 @@
 			"url": "https://github.com/sponsors/polyipseity"
 		}
 	],
-	"homepage": "https://github.com/polyipseity/PLACEHOLDER#readme",
+	"homepage": "https://github.com/MaxwellsEquation/LaTerM#readme",
 	"keywords": [
 		"console",
 		"console-emulator",
@@ -114,7 +114,7 @@
 	"private": true,
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/polyipseity/PLACEHOLDER.git"
+		"url": "git+https://github.com/MaxwellsEquation/LaTerM.git"
 	},
 	"scripts": {
 		"build": "npm run check && npm run build:force",
