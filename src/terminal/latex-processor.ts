@@ -1,0 +1,310 @@
+import type { Terminal } from "@xterm/xterm"
+import { LatexHashMap, type LatexEntry } from "./latex-hashmap.js"
+import * as fs from "fs"
+import * as path from "path"
+
+/**
+ * LatexProcessor - Intercepts terminal.write() to detect and replace LaTeX with hash placeholders
+ * Works in conjunction with LatexHashMap to store expressions for later rendering
+ */
+export class LatexProcessor {
+	private terminal: Terminal
+	private latexMap: LatexHashMap
+	private buffer: string = ''  // For incomplete LaTeX at chunk boundaries
+	private originalWrite: (data: string | Uint8Array, callback?: () => void) => void
+	private enabled: boolean = true
+	private loggingEnabled: boolean
+	private logStream: fs.WriteStream | null = null
+	private processCount: number = 0
+	private inAlternateScreen: boolean = false
+	
+	constructor(terminal: Terminal, loggingEnabled: boolean, vaultPath: string) {
+		this.terminal = terminal
+		this.latexMap = new LatexHashMap()
+		this.loggingEnabled = loggingEnabled
+		
+		// Store original write function
+		this.originalWrite = terminal.write.bind(terminal)
+		
+		// Set up logging if enabled
+		if (loggingEnabled) {
+			try {
+				const logDir = path.join(vaultPath, '.obsidian', 'plugins', 'laterm', 'logs')
+				if (!fs.existsSync(logDir)) {
+					fs.mkdirSync(logDir, { recursive: true })
+				}
+				
+				const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+				const logPath = path.join(logDir, `latex-processor-${timestamp}.log`)
+				this.logStream = fs.createWriteStream(logPath, { flags: 'a' })
+				
+				this.log(`[LaTeX Processor] Started at ${new Date().toISOString()}`)
+				this.log(`[LaTeX Processor] Log file: ${logPath}`)
+				console.log(`[LaTerM] LaTeX processor logs: ${logPath}`)
+			} catch (error) {
+				console.error(`[LaTerM] Failed to create processor log: ${error}`)
+			}
+		}
+		
+		// Hook terminal.write
+		this.hookTerminalWrite()
+	}
+	
+	/**
+	 * Hook into terminal.write to process LaTeX
+	 */
+	private hookTerminalWrite(): void {
+		this.terminal.write = (data: string | Uint8Array, callback?: () => void) => {
+			if (!this.enabled || this.inAlternateScreen || typeof data !== 'string') {
+				// Pass through without processing
+				return this.originalWrite(data, callback)
+			}
+			
+			// Detect alternate screen commands
+			if (data.includes('\x1b[?1049h')) {
+				this.inAlternateScreen = true
+				this.log(`[LaTeX Processor] Entering alternate screen`)
+				return this.originalWrite(data, callback)
+			} else if (data.includes('\x1b[?1049l')) {
+				this.inAlternateScreen = false
+				this.log(`[LaTeX Processor] Exiting alternate screen`)
+				return this.originalWrite(data, callback)
+			}
+			
+			// Process LaTeX in the data
+			const processed = this.processLatex(data)
+			
+			// Log if different from original
+			if (processed !== data && this.loggingEnabled) {
+				this.processCount++
+				this.log(`\n[Process #${this.processCount}] ===================================`)
+				this.log(`[Original]: ${this.getSafePreview(data, 200)}`)
+				this.log(`[Processed]: ${this.getSafePreview(processed, 200)}`)
+				this.log(`[Buffer State]: "${this.buffer}"`)
+				this.log(`[HashMap Stats]: ${JSON.stringify(this.latexMap.getStats())}`)
+			}
+			
+			return this.originalWrite(processed, callback)
+		}
+	}
+	
+	/**
+	 * Process LaTeX expressions in text
+	 */
+	private processLatex(text: string): string {
+		// Combine with any buffered incomplete LaTeX
+		const combined = this.buffer + text
+		this.buffer = ''
+		
+		let result = combined
+		let replacementCount = 0
+		
+		// Process display LaTeX first: $$...$$
+		// Relaxed requirements - any non-empty content between $$...$$ is treated as LaTeX
+		result = result.replace(/\$\$([^$]+?)\$\$/g, (_, latex) => {
+			// Remove newlines that are likely from terminal wrapping
+			latex = latex.replace(/\n\s*/g, ' ')
+			replacementCount++
+			
+			// Generate hash and calculate dimensions for display math
+			const hash = this.latexMap.generateHash(latex)
+			const { width, height } = LatexHashMap.calculateDisplayDimensions(latex)
+			
+			// Store in hashmap
+			const entry: LatexEntry = {
+				latex: latex,
+				displayWidth: Math.max(width, 20), // Display math needs more space
+				displayHeight: height
+			}
+			this.latexMap.set(hash, entry)
+			
+			// Create placeholder
+			const placeholder = this.latexMap.formatPlaceholder(hash, entry.displayWidth)
+			
+			// Log the replacement
+			if (this.loggingEnabled) {
+				this.log(`  [Display LaTeX Found #${replacementCount}]`)
+				this.log(`    Expression: ${latex}`)
+				this.log(`    Hash: ${hash}`)
+				this.log(`    Dimensions: ${entry.displayWidth}x${height}`)
+				this.log(`    Placeholder: "${placeholder}"`)
+			}
+			
+			return placeholder
+		})
+		
+		// Then process inline LaTeX: $...$
+		// Must have at least one backslash to be considered LaTeX
+		// Allow newlines for terminal wrapping, but clean them up
+		result = result.replace(/\$([^$]*\\[^$]+?)\$/g, (_, latex) => {
+			// Remove newlines that are likely from terminal wrapping
+			// Keep the content but remove line breaks
+			latex = latex.replace(/\n\s*/g, '')
+			replacementCount++
+			
+			// Generate hash and calculate dimensions
+			const hash = this.latexMap.generateHash(latex)
+			const { width, height } = LatexHashMap.calculateDisplayDimensions(latex)
+			
+			// Store in hashmap
+			const entry: LatexEntry = {
+				latex: latex,
+				displayWidth: width,
+				displayHeight: height
+			}
+			this.latexMap.set(hash, entry)
+			
+			// Create placeholder
+			const placeholder = this.latexMap.formatPlaceholder(hash, width)
+			
+			// Log the replacement
+			if (this.loggingEnabled) {
+				this.log(`  [LaTeX Found #${replacementCount}]`)
+				this.log(`    Expression: ${latex}`)
+				this.log(`    Hash: ${hash}`)
+				this.log(`    Dimensions: ${width}x${height}`)
+				this.log(`    Placeholder: "${placeholder}"`)
+			}
+			
+			return placeholder
+		})
+		
+		// Check for incomplete LaTeX at the end
+		// Look for either $ or $$ that might be incomplete
+		const lastSingle = result.lastIndexOf('$')
+		const lastDouble = result.lastIndexOf('$$')
+		const lastNewline = result.lastIndexOf('\n')
+		
+		// Use the most recent dollar sign(s)
+		const lastDollar = Math.max(lastSingle, lastDouble)
+		
+		if (lastDollar > lastNewline && lastDollar !== -1) {
+			const isDoubleDollar = lastDouble === lastDollar
+			const dollarOffset = isDoubleDollar ? 2 : 1
+			const beforeDollar = result.substring(Math.max(0, lastDollar - 20), lastDollar)
+			const afterDollar = result.substring(lastDollar + dollarOffset)
+			
+			// Common LaTeX patterns that suggest we should buffer
+			const latexPatterns = [
+				'\\frac', '\\sqrt', '\\sum', '\\int', '\\nabla', '\\partial',
+				'\\alpha', '\\beta', '\\gamma', '\\theta', '\\phi', '\\psi',
+				'\\begin', '\\end', '\\left', '\\right',
+				'^{', '_{', '\\cdot', '\\times', '\\div', '\\mathbf', '\\text'
+			]
+			
+			// Only buffer if:
+			// 1. No closing $ or $$ yet
+			// 2. For $: Contains LaTeX-like patterns
+			// 3. For $$: Always buffer (display math is intentional)
+			// 4. Not a shell prompt ($ followed by space or at end)
+			// 5. Buffer is reasonably small (under 100 chars for display math)
+			const potentialBuffer = result.substring(lastDollar)
+			const looksLikeLatex = latexPatterns.some(p => afterDollar.includes(p)) || 
+			                       latexPatterns.some(p => beforeDollar.includes(p))
+			const isShellPrompt = !isDoubleDollar && (afterDollar.match(/^\s/) || afterDollar === '')
+			const maxBufferSize = isDoubleDollar ? 100 : 50
+			
+			// For $$, always buffer. For $, need LaTeX patterns
+			const shouldBuffer = isDoubleDollar || looksLikeLatex
+			
+			if (!afterDollar.includes(isDoubleDollar ? '$$' : '$') && 
+			    !afterDollar.includes('\n') && 
+			    shouldBuffer && 
+			    !isShellPrompt &&
+			    potentialBuffer.length < maxBufferSize) {
+				this.buffer = potentialBuffer
+				result = result.substring(0, lastDollar)
+				
+				if (this.loggingEnabled) {
+					this.log(`  [Buffered Incomplete]: "${this.buffer}"`)
+				}
+			}
+		}
+		
+		// Clear buffer if it's been too long (stale)
+		if (this.buffer.length > 100) {
+			if (this.loggingEnabled) {
+				this.log(`  [Buffer cleared - too long]: "${this.buffer}"`)
+			}
+			result = this.buffer + result
+			this.buffer = ''
+		}
+		
+		return result
+	}
+	
+	/**
+	 * Get a safe preview of text for logging
+	 */
+	private getSafePreview(text: string, maxLength: number): string {
+		let preview = text
+			.slice(0, maxLength)
+			.replace(/\x1b/g, "ESC")
+			.replace(/\n/g, "\\n")
+			.replace(/\r/g, "\\r")
+			.replace(/\t/g, "\\t")
+		
+		if (text.length > maxLength) {
+			preview += "..."
+		}
+		
+		return preview
+	}
+	
+	/**
+	 * Write to log file
+	 */
+	private log(message: string): void {
+		if (this.logStream && !this.logStream.destroyed) {
+			this.logStream.write(message + '\n')
+		}
+	}
+	
+	/**
+	 * Enable or disable the processor
+	 */
+	public setEnabled(enabled: boolean): void {
+		this.enabled = enabled
+		this.log(`[LaTeX Processor] ${enabled ? "Enabled" : "Disabled"}`)
+	}
+	
+	/**
+	 * Get the LaTeX hashmap for external access (e.g., overlay renderer)
+	 */
+	public getLatexMap(): LatexHashMap {
+		return this.latexMap
+	}
+	
+	/**
+	 * Get processor statistics
+	 */
+	public getStats(): void {
+		this.log(`\n[LaTeX Processor] Session statistics:`)
+		this.log(`  Process count: ${this.processCount}`)
+		this.log(`  Current buffer: "${this.buffer}"`)
+		this.log(`  HashMap: ${JSON.stringify(this.latexMap.getStats())}`)
+		this.log(`  In alternate screen: ${this.inAlternateScreen}`)
+	}
+	
+	/**
+	 * Clean up resources
+	 */
+	public dispose(): void {
+		this.log(`\n[LaTeX Processor] Disposing...`)
+		this.getStats()
+		this.log(`[LaTeX Processor] Session ended at ${new Date().toISOString()}`)
+		
+		// Restore original write function
+		if (this.originalWrite) {
+			this.terminal.write = this.originalWrite
+		}
+		
+		// Clear the hashmap
+		this.latexMap.clear()
+		
+		// Close log stream
+		if (this.logStream && !this.logStream.destroyed) {
+			this.logStream.end()
+		}
+	}
+}

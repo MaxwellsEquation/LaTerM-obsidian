@@ -11,7 +11,6 @@ export interface LatexEntry {
 
 export class LatexHashMap {
 	private map: Map<string, LatexEntry> = new Map()
-	private counter: number = 0
 	// Most terminals have scrollback of 1000-10000 lines
 	// With average ~5 LaTeX expressions per screen, 5000 should cover even heavy usage
 	private maxSize: number = 5000
@@ -21,7 +20,7 @@ export class LatexHashMap {
 	 * Format: [a-f0-9]{5}
 	 */
 	generateHash(latex: string): string {
-		// Simple hash function - can be replaced with better algorithm
+		// Deterministic hash - same LaTeX always gets same hash
 		let hash = 0
 		for (let i = 0; i < latex.length; i++) {
 			const char = latex.charCodeAt(i)
@@ -29,11 +28,9 @@ export class LatexHashMap {
 			hash = hash & hash // Convert to 32-bit integer
 		}
 		
-		// Convert to hex and take first 4 chars
-		const baseHash = Math.abs(hash).toString(16).substring(0, 4).padStart(4, '0')
-		
-		// Add counter to ensure uniqueness (0-f)
-		const uniqueHash = baseHash + (this.counter++ % 16).toString(16)
+		// Convert to hex and take first 5 chars
+		// No counter - purely based on content
+		const uniqueHash = Math.abs(hash).toString(16).substring(0, 5).padStart(5, '0')
 		
 		return uniqueHash
 	}
@@ -187,6 +184,5 @@ export class LatexHashMap {
 	 */
 	clear(): void {
 		this.map.clear()
-		this.counter = 0
 	}
 }
