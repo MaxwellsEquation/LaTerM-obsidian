@@ -150,16 +150,21 @@ export class OverlayManager {
 			overlay = document.createElement('div')
 			overlay.className = 'latex-overlay'
 			overlay.dataset['hash'] = hash
+			// Get terminal font size to match
+			const cellDims = this.getCellDimensions()
 			overlay.style.cssText = `
 				position: absolute;
 				pointer-events: none;
 				background: var(--background-primary);
 				color: var(--text-normal);
-				font-size: 1em;
+				font-size: ${cellDims.height * 0.6}px;
 				line-height: 1;
+				min-width: ${7 * cellDims.width}px;
 				white-space: nowrap;
-				padding: 0 2px;
+				padding: 0;
+				margin: 0;
 				box-sizing: border-box;
+				display: inline-block;
 			`
 			this.overlayContainer.appendChild(overlay)
 			this.overlays.set(hash, overlay)
@@ -173,9 +178,24 @@ export class OverlayManager {
 		const x = col * cellDims.width
 		const y = row * cellDims.height
 		
-		// Position overlay
+		// Update position and size (cell dimensions may have changed on zoom)
 		overlay.style.left = `${x}px`
 		overlay.style.top = `${y}px`
+		overlay.style.fontSize = `${cellDims.height * 0.6}px`
+		overlay.style.minWidth = `${7 * cellDims.width}px`
+		// Let width be natural but enforce minimum
+		overlay.style.width = 'auto'
+		
+		// Width should already be correct from pre-rendering
+		// Just log if there's a discrepancy for debugging
+		if (entry.renderedHTML) {
+			setTimeout(() => {
+				const actualWidth = Math.ceil(overlay.offsetWidth / cellDims.width)
+				if (actualWidth !== entry.displayWidth) {
+					console.warn(`[LaTerM] Width mismatch for ${hash}: expected ${entry.displayWidth}, actual ${actualWidth}`)
+				}
+			}, 10)
+		}
 		
 		// Set max width to prevent overflow
 		const maxWidth = (this.terminal.cols - col) * cellDims.width
@@ -208,8 +228,8 @@ export class OverlayManager {
 			
 			const text = line.translateToString()
 			
-			// Find all «evmXXXXX» patterns in this line
-			const hashRegex = /«evm([a-f0-9]{5})»/g
+			// Find all ««XXXX» patterns in this line
+			const hashRegex = /««([a-f0-9]{4})»/g
 			let match
 			
 			while ((match = hashRegex.exec(text)) !== null) {

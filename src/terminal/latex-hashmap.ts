@@ -18,8 +18,8 @@ export class LatexHashMap {
 	private maxSize: number = 5000
 	
 	/**
-	 * Generate a unique 5-character hash for a LaTeX expression
-	 * Format: [a-f0-9]{5}
+	 * Generate a unique 4-character hash for a LaTeX expression
+	 * Format: [a-f0-9]{4}
 	 */
 	generateHash(latex: string): string {
 		// Deterministic hash - same LaTeX always gets same hash
@@ -30,20 +30,22 @@ export class LatexHashMap {
 			hash = hash & hash // Convert to 32-bit integer
 		}
 		
-		// Convert to hex and take first 5 chars
+		// Convert to hex and take first 4 chars
 		// No counter - purely based on content
-		const uniqueHash = Math.abs(hash).toString(16).substring(0, 5).padStart(5, '0')
+		const uniqueHash = Math.abs(hash).toString(16).substring(0, 4).padStart(4, '0')
 		
 		return uniqueHash
 	}
 	
 	/**
-	 * Format a placeholder with «evm» prefix and spacing
-	 * Example: «evma7b3c»    (with spaces to fill width)
+	 * Format a placeholder with «« » brackets and spacing
+	 * Example: ««a7b3»    (with spaces to fill width)
 	 */
 	formatPlaceholder(hash: string, width: number): string {
-		const marker = `«evm${hash}»`
-		const spaces = ' '.repeat(Math.max(0, width - marker.length))
+		const marker = `««${hash}»`
+		// Minimum width is the marker itself (7 chars)
+		const actualWidth = Math.max(width, marker.length)
+		const spaces = ' '.repeat(actualWidth - marker.length)
 		return marker + spaces
 	}
 	
@@ -52,9 +54,9 @@ export class LatexHashMap {
 	 * Returns null if not a valid marker
 	 */
 	extractHash(text: string, position: number): string | null {
-		// Look for «evm[hash]» pattern at position
-		const markerRegex = /«evm([a-f0-9]{5})»/
-		const substring = text.substring(position, position + 11) // «evm12345»
+		// Look for ««[hash]» pattern at position
+		const markerRegex = /««([a-f0-9]{4})»/
+		const substring = text.substring(position, position + 7) // ««1234»
 		const match = substring.match(markerRegex)
 		return match?.[1] ?? null
 	}
@@ -106,7 +108,7 @@ export class LatexHashMap {
 	 */
 	findHashMarkers(text: string): Array<{hash: string, column: number, width: number}> {
 		const markers: Array<{hash: string, column: number, width: number}> = []
-		const regex = /«evm([a-f0-9]{5})»(\s*)/g
+		const regex = /««([a-f0-9]{4})»(\s*)/g
 		let match
 		
 		while ((match = regex.exec(text)) !== null) {
@@ -156,8 +158,8 @@ export class LatexHashMap {
 			width = Math.max(width, 10 * Math.ceil(rows / 2))
 		}
 		
-		// Minimum width for «evm12345» marker (10 chars)
-		width = Math.max(width, 10)
+		// Minimum width for ««1234» marker (7 chars)
+		width = Math.max(width, 7)
 		
 		// Cap at reasonable maximum
 		width = Math.min(width, 50)

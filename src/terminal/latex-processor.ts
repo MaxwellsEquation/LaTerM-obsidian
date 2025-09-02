@@ -1,5 +1,6 @@
 import type { Terminal } from "@xterm/xterm"
 import { LatexHashMap, type LatexEntry } from "./latex-hashmap.js"
+import katex from "katex"
 import * as fs from "fs"
 import * as path from "path"
 
@@ -48,6 +49,82 @@ export class LatexProcessor {
 		
 		// Hook terminal.write
 		this.hookTerminalWrite()
+	}
+	
+	/**
+	 * Render LaTeX and measure its width in terminal cells
+	 */
+	private renderAndMeasure(latex: string, isDisplay: boolean = false): { html: string, width: number, error?: string } {
+		try {
+			// Render with KaTeX
+			const html = katex.renderToString(latex, {
+				throwOnError: false,
+				displayMode: isDisplay,
+				output: 'html',
+				trust: false,
+				strict: false
+			})
+			
+			// Get terminal font size for accurate measurement
+			let fontSize = 14 // fallback
+			try {
+				const renderer = (this.terminal as any)._core?._renderService
+				if (renderer?.dimensions?.actualCellHeight) {
+					fontSize = renderer.dimensions.actualCellHeight * 0.6
+				}
+			} catch (e) {
+				// Use fallback
+			}
+			
+			// Create temporary element to measure
+			const measurer = document.createElement('div')
+			measurer.style.cssText = `
+				position: absolute;
+				visibility: hidden;
+				height: auto;
+				width: auto;
+				white-space: nowrap;
+				font-family: monospace;
+				font-size: ${fontSize}px;
+				line-height: 1;
+				padding: 0;
+				display: inline-block;
+			`
+			measurer.innerHTML = html
+			document.body.appendChild(measurer)
+			
+			// Measure and calculate terminal cells needed
+			const pixelWidth = measurer.offsetWidth
+			// Try to get actual cell width from terminal
+			let cellWidth = 9 // fallback
+			try {
+				const renderer = (this.terminal as any)._core?._renderService
+				if (renderer?.dimensions?.actualCellWidth) {
+					cellWidth = renderer.dimensions.actualCellWidth
+				}
+			} catch (e) {
+				// Use fallback
+			}
+			// Calculate cells needed without extra padding
+			const cells = Math.ceil(pixelWidth / cellWidth)
+			
+			// Clean up
+			document.body.removeChild(measurer)
+			
+			// Ensure minimum width of 7 cells for hash marker
+			const finalWidth = Math.max(cells, 7)
+			
+			return { html, width: finalWidth }
+		} catch (error) {
+			const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+			console.error(`[LaTerM] KaTeX render error for "${latex}":`, error)
+			// Return error placeholder
+			return { 
+				html: `<span style="color: red; font-family: monospace;">[LaTeX Error]</span>`,
+				width: 12,
+				error: errorMsg
+			}
+		}
 	}
 	
 	/**
@@ -106,27 +183,31 @@ export class LatexProcessor {
 			latex = latex.replace(/\n\s*/g, ' ')
 			replacementCount++
 			
-			// Generate hash and calculate dimensions for display math
+			// Generate hash
 			const hash = this.latexMap.generateHash(latex)
-			const { width, height } = LatexHashMap.calculateDisplayDimensions(latex)
 			
-			// Store in hashmap
+			// Render and measure IMMEDIATELY
+			const { html, width, error } = this.renderAndMeasure(latex, true)
+			
+			// Store in hashmap with rendered HTML
 			const entry: LatexEntry = {
 				latex: latex,
-				displayWidth: Math.max(width, 20), // Display math needs more space
-				displayHeight: height
+				displayWidth: width,
+				displayHeight: 1,
+				renderedHTML: error ? undefined : html,
+				renderError: error
 			}
 			this.latexMap.set(hash, entry)
 			
-			// Create placeholder
-			const placeholder = this.latexMap.formatPlaceholder(hash, entry.displayWidth)
+			// Create placeholder with measured width
+			const placeholder = this.latexMap.formatPlaceholder(hash, width)
 			
 			// Log the replacement
 			if (this.loggingEnabled) {
 				this.log(`  [Display LaTeX Found #${replacementCount}]`)
 				this.log(`    Expression: ${latex}`)
 				this.log(`    Hash: ${hash}`)
-				this.log(`    Dimensions: ${entry.displayWidth}x${height}`)
+				this.log(`    Measured width: ${width} cells`)
 				this.log(`    Placeholder: "${placeholder}"`)
 			}
 			
@@ -142,27 +223,31 @@ export class LatexProcessor {
 			latex = latex.replace(/\n\s*/g, '')
 			replacementCount++
 			
-			// Generate hash and calculate dimensions
+			// Generate hash
 			const hash = this.latexMap.generateHash(latex)
-			const { width, height } = LatexHashMap.calculateDisplayDimensions(latex)
 			
-			// Store in hashmap
+			// Render and measure IMMEDIATELY
+			const { html, width, error } = this.renderAndMeasure(latex, false)
+			
+			// Store in hashmap with rendered HTML
 			const entry: LatexEntry = {
 				latex: latex,
 				displayWidth: width,
-				displayHeight: height
+				displayHeight: 1,
+				renderedHTML: error ? undefined : html,
+				renderError: error
 			}
 			this.latexMap.set(hash, entry)
 			
-			// Create placeholder
+			// Create placeholder with measured width
 			const placeholder = this.latexMap.formatPlaceholder(hash, width)
 			
 			// Log the replacement
 			if (this.loggingEnabled) {
-				this.log(`  [LaTeX Found #${replacementCount}]`)
+				this.log(`  [Inline LaTeX Found #${replacementCount}]`)
 				this.log(`    Expression: ${latex}`)
 				this.log(`    Hash: ${hash}`)
-				this.log(`    Dimensions: ${width}x${height}`)
+				this.log(`    Measured width: ${width} cells`)
 				this.log(`    Placeholder: "${placeholder}"`)
 			}
 			
