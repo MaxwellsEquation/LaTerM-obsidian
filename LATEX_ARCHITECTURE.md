@@ -1,770 +1,589 @@
 # LaTeX Terminal Integration Architecture
 
-## Current Terminal Architecture
+## Overview: terminal.write() Hook with HTML Overlays
 
-### Current File Pipeline
-```
-main.ts (Plugin entry)
-    ↓
-load.ts (Register commands/views)
-    ↓
-spawn.ts (Create terminal instance)
-    ↓
-view.ts (Obsidian ItemView, UI management)
-    ↓
-emulator.ts (XtermTerminalEmulator wrapper)
-    ↓
-pseudoterminal.ts (Shell process connection)
-    ↓
-xterm.js (Terminal display with DOM/Canvas/WebGL)
-```
+We hook the `terminal.write()` function to intercept only data that will be displayed, replace LaTeX expressions with placeholders, and render KaTeX overlays on top.
 
-### Current Data Flow
-```
-User Input → xterm.js → pseudoterminal → Shell Process
-                ↑                             ↓
-          Terminal Display ← pseudoterminal ← Shell Output
-```
+## Core Architecture
 
-### Key Constraints
-1. xterm.js uses a **fixed grid system** - each character occupies a cell
-2. LaTeX equations have **variable dimensions** that don't fit the grid
-3. Multi-line LaTeX **cannot displace** terminal text in the grid
-4. Need to preserve **terminal functionality** (autocomplete, readline, etc.)
-
-## Proposed Solution: Virtual Terminal Display
-
-### New File Pipeline
+### Data Flow
 ```
-main.ts (Plugin entry - unchanged)
-    ↓
-load.ts (Register commands/views - unchanged)
-    ↓
-spawn.ts (Create terminal instance - unchanged)
-    ↓
-view.ts (Obsidian ItemView - modified)
-    ↓
-virtual-display.ts (NEW - replaces emulator.ts)
-    ├→ Input: xterm.js (DOM only, 1-3 lines)
-    └→ Output: Custom HTML renderer
-    ↓
-pseudoterminal.ts (Shell process - unchanged)
+Shell Process
+     ↓
+PTY Output Stream
+     ↓
+pty.onData() → terminal.write()  ← WE HOOK HERE
+                      ↓
+              LaTeX Detection & Buffering
+                      ↓
+              Placeholder Generation
+                      ↓
+              originalWrite(modified_data)
+                      ↓
+              Terminal Grid Display
+                      ↓
+              KaTeX Overlay Positioning
+                      ↓
+              Final Visual Output
 ```
 
-### New Data Flow
-```
-User Input → Small xterm → VirtualDisplay → pseudoterminal → Shell
-                                   ↓                            ↓
-                            Parse & Route                 Shell Output
-                                   ↓                            ↓
-                          HTML Output Display ← Parse LaTeX ←──┘
-```
+### Key Insight
+- **No PTY interception needed** - We only process data that will actually be displayed
+- **terminal.write()** is the single point where all display data flows through
+- **Most PTY data never reaches terminal.write()** (control sequences, queries, etc.)
+- HTML overlays positioned precisely over placeholder characters in the grid
+- Terminal handles scrolling, selection, and reflow normally
 
-### Architecture Decision
-**Create a virtual terminal display** that separates input from output:
-- **Input**: Small xterm.js terminal for command entry (with full terminal features)
-- **Output**: Custom HTML-based display that can render LaTeX properly
+## Implementation Strategy
 
-### Why Virtual Terminal Display?
-1. **True multi-line support**: LaTeX can render at natural size
-2. **Preserves terminal features**: Autocomplete, readline work in input area
-3. **Clean separation**: Input handling vs output rendering are independent
-4. **No grid constraints**: Output area uses regular HTML/DOM
-5. **Better UX**: Output can have rich formatting, clickable links, etc.
+### Phase 1: Intercept & Detect
 
-### Visual Architecture
-
-```
-┌────────────────────────────────────────┐
-│       Virtual Terminal Container        │
-│  ┌────────────────────────────────────┐ │
-│  │    Virtual Output Display (95%)    │ │ ← Custom HTML renderer
-│  │                                    │ │   Scrollable area
-│  │  $ echo "Matrix $$\begin{bmatrix}  │ │   
-│  │    1 & 2 \\ 3 & 4                  │ │
-│  │    \end{bmatrix}$$"                │ │
-│  │                                    │ │
-│  │  Matrix [1 2]                      │ │ ← Rendered LaTeX
-│  │         [3 4]                      │ │   (proper multi-line)
-│  │                                    │ │
-│  │  $ calculate.py                    │ │
-│  │  Result: ∫x²dx = x³/3 + C         │ │
-│  │                                    │ │
-│  └────────────────────────────────────┘ │
-│  ┌────────────────────────────────────┐ │
-│  │  Input Terminal (xterm.js, 5%)    │ │ ← Real terminal
-│  │  $ current_command█                │ │   (1-3 lines)
-│  └────────────────────────────────────┘ │
-└────────────────────────────────────────┘
-```
-
-### Key Architecture Changes
-
-#### What Changes in Each File
-
-**view.ts (Major Refactor)**
 ```typescript
-// BEFORE:
-class TerminalView {
-    protected emulator: XtermTerminalEmulator
+// File: src/terminal/latex-processor.ts
+export class LatexProcessor {
+    private buffer: string = "";
+    private overlayManager: OverlayManager;
+    private terminal: Terminal;
     
-    startEmulator() {
-        this.emulator = new XtermTerminalEmulator(...)
-        // Single xterm for everything
-    }
-}
-
-// AFTER:
-class TerminalView {
-    protected display: VirtualDisplay
-    
-    startTerminal() {
-        this.display = new VirtualDisplay(...)
-        // Split input/output system
-    }
-}
-```
-
-**virtual-display.ts (New File)**
-```typescript
-// Replaces emulator.ts functionality
-export class VirtualDisplay {
-    private inputTerminal: Terminal      // Small xterm (1-3 lines)
-    private outputDisplay: HTMLDivElement // Custom HTML renderer
-    private pty: Pseudoterminal          // Shell connection (from pseudoterminal.ts)
-    
-    constructor(container: HTMLElement, profile: Profile) {
-        // Create split layout
-        // Connect PTY
-        // Route I/O appropriately
-    }
-}
-```
-
-**emulator.ts (Deprecated)**
-```typescript
-// This file becomes obsolete
-// XtermTerminalEmulator no longer needed
-// Functionality moved to VirtualDisplay
-```
-
-### Implementation Plan
-
-#### Phase 1: Core Architecture
-```typescript
-// New file: src/terminal/virtual-display.ts
-class VirtualTerminalDisplay {
-    private container: HTMLElement;
-    private outputDisplay: HTMLDivElement;
-    private inputTerminal: Terminal;
-    private outputBuffer: OutputLine[];
-    private pty: IPseudoterminal;
-    private ansiParser: AnsiParser;
-    
-    constructor(container: HTMLElement, profile: Profile) {
-        this.setupLayout();
-        this.connectPty(profile);
-        this.setupEventHandlers();
+    constructor(terminal: Terminal, container: HTMLElement) {
+        this.terminal = terminal;
+        this.overlayManager = new OverlayManager(terminal, container);
     }
     
-    private setupLayout() {
-        // Create split container
-        this.container.classList.add('virtual-terminal');
+    processData(data: string): string {
+        // Buffer data to handle streaming LaTeX
+        this.buffer += data;
         
-        // Output display area (95% height)
-        this.outputDisplay = document.createElement('div');
-        this.outputDisplay.className = 'virtual-output';
-        this.container.appendChild(this.outputDisplay);
+        // Check if we have complete LaTeX expressions
+        const processed = this.detectAndReplaceLatex(this.buffer);
         
-        // Input terminal area (5% height)
-        const inputContainer = document.createElement('div');
-        inputContainer.className = 'terminal-input';
-        this.container.appendChild(inputContainer);
-        
-        // Small xterm for input only
-        this.inputTerminal = new Terminal({
-            rows: 1,
-            cursorBlink: true,
-            fontSize: 14
-        });
-        this.inputTerminal.open(inputContainer);
-    }
-}
-```
-
-#### Phase 2: PTY Connection and Routing
-```typescript
-interface OutputLine {
-    type: 'text' | 'latex-inline' | 'latex-display' | 'mixed';
-    content: string;
-    raw: string;
-    ansiCodes?: AnsiStyle;
-    timestamp: number;
-}
-
-class VirtualTerminalDisplay {
-    private connectPty(profile: Profile) {
-        // Create PTY connection
-        this.pty = createPseudoterminal(profile);
-        
-        // Route input from terminal to PTY
-        this.inputTerminal.onData(data => {
-            this.pty.write(data);
-            this.handleInputEcho(data);
-        });
-        
-        // Route output from PTY to virtual display
-        this.pty.onData(data => {
-            this.handlePtyOutput(data);
-        });
-    }
-    
-    private handlePtyOutput(data: string) {
-        // Parse ANSI codes
-        const parsed = this.ansiParser.parse(data);
-        
-        // Detect if this is a prompt
-        if (this.isPrompt(parsed)) {
-            this.handlePrompt(parsed);
-            return;
+        if (processed.complete) {
+            this.buffer = processed.remainder;
+            return processed.output;
         }
         
-        // Add to output buffer
-        this.processOutput(parsed);
-        this.render();
+        // If incomplete LaTeX, wait for more data
+        if (this.hasIncompleteLatex(this.buffer)) {
+            return ""; // Don't write anything yet
+        }
+        
+        // No LaTeX, flush buffer
+        const output = this.buffer;
+        this.buffer = "";
+        return output;
     }
 }
 ```
 
-#### Phase 3: LaTeX Detection and Parsing
-```typescript
-const LATEX_PATTERNS = [
-    { regex: /\$\$(.*?)\$\$/gs, type: 'display' },
-    { regex: /\$(.*?)\$/g, type: 'inline' },
-    { regex: /\\\[(.*?)\\\]/gs, type: 'display' },
-    { regex: /\\\((.*?)\\\)/g, type: 'inline' },
-    { regex: /\\begin\{(.*?)\}(.*?)\\end\{\1\}/gs, type: 'display' }
-];
+### Phase 2: LaTeX Detection & Replacement
 
-class LatexParser {
-    parse(text: string): ParsedSegment[] {
-        const segments: ParsedSegment[] = [];
-        let lastIndex = 0;
+```typescript
+interface LatexRegion {
+    type: 'inline' | 'display';
+    latex: string;
+    startPos: number;
+    endPos: number;
+    placeholder: string;
+    lineNumber?: number;
+    columnStart?: number;
+}
+
+class LatexDetector {
+    // Patterns for complete LaTeX expressions
+    private patterns = [
+        { regex: /\$\$((?:[^\$]|\\\$)+)\$\$/g, type: 'display' },
+        { regex: /\$((?:[^\$]|\\\$)+)\$/g, type: 'inline' },
+        { regex: /\\\[(.*?)\\\]/gs, type: 'display' },
+        { regex: /\\\((.*?)\\\)/g, type: 'inline' },
+        { regex: /\\begin\{equation\}(.*?)\\end\{equation\}/gs, type: 'display' },
+        { regex: /\\begin\{align\}(.*?)\\end\{align\}/gs, type: 'display' }
+    ];
+    
+    detectAndReplaceLatex(text: string): {
+        output: string;
+        regions: LatexRegion[];
+        complete: boolean;
+        remainder: string;
+    } {
+        const regions: LatexRegion[] = [];
+        let output = text;
+        let complete = true;
         
-        // Find all LaTeX patterns
-        for (const pattern of LATEX_PATTERNS) {
-            const matches = [...text.matchAll(pattern.regex)];
-            for (const match of matches) {
-                // Add text before match
-                if (match.index > lastIndex) {
-                    segments.push({
-                        type: 'text',
-                        content: text.slice(lastIndex, match.index)
-                    });
-                }
+        // Check for incomplete LaTeX at end
+        if (this.hasIncompleteLatexAtEnd(text)) {
+            complete = false;
+            // Return incomplete portion as remainder
+            const splitPoint = this.findLastCompletePosition(text);
+            return {
+                output: this.processCompleteText(text.slice(0, splitPoint), regions),
+                regions,
+                complete: false,
+                remainder: text.slice(splitPoint)
+            };
+        }
+        
+        // Process complete LaTeX expressions
+        for (const pattern of this.patterns) {
+            output = output.replace(pattern.regex, (match, latex, offset) => {
+                const placeholder = this.generatePlaceholder(latex, pattern.type);
                 
-                // Add LaTeX
-                segments.push({
-                    type: 'latex',
-                    content: match[1],
-                    displayMode: pattern.type === 'display'
+                regions.push({
+                    type: pattern.type as 'inline' | 'display',
+                    latex,
+                    startPos: offset,
+                    endPos: offset + match.length,
+                    placeholder
                 });
                 
-                lastIndex = match.index + match[0].length;
-            }
-        }
-        
-        // Add remaining text
-        if (lastIndex < text.length) {
-            segments.push({
-                type: 'text',
-                content: text.slice(lastIndex)
+                return placeholder;
             });
         }
         
-        return segments;
+        return { output, regions, complete, remainder: "" };
+    }
+    
+    generatePlaceholder(latex: string, type: string): string {
+        if (type === 'inline') {
+            // Estimate width for inline math
+            const estimatedWidth = Math.min(latex.length / 2, 10);
+            return '█'.repeat(Math.max(3, estimatedWidth));
+        } else {
+            // Multi-line placeholder for display math
+            const lines = this.estimateLatexLines(latex);
+            const width = 20; // Standard width for display math
+            
+            return lines.map(() => '░'.repeat(width)).join('\n');
+        }
+    }
+    
+    estimateLatexLines(latex: string): string[] {
+        // Simple heuristic - can be improved
+        if (latex.includes('\\begin{matrix}') || latex.includes('\\begin{bmatrix}')) {
+            const rows = (latex.match(/\\\\/g) || []).length + 1;
+            return Array(rows).fill('');
+        }
+        if (latex.includes('\\frac')) {
+            return ['', '']; // Fractions need 2 lines minimum
+        }
+        return ['']; // Default single line
     }
 }
 ```
 
-#### Phase 4: Rendering Engine
-```typescript
-import katex from 'katex';
+### Phase 3: Overlay Management
 
-class VirtualRenderer {
-    render(buffer: OutputLine[], container: HTMLElement) {
-        // Clear container
-        container.innerHTML = '';
-        
-        for (const line of buffer) {
-            const lineElement = this.createLineElement(line);
-            container.appendChild(lineElement);
-        }
-        
-        // Auto-scroll to bottom
-        container.scrollTop = container.scrollHeight;
+```typescript
+// File: src/terminal/overlay-manager.ts
+export class OverlayManager {
+    private overlays: Map<string, HTMLElement> = new Map();
+    private terminal: Terminal;
+    private container: HTMLElement;
+    private overlayContainer: HTMLElement;
+    
+    constructor(terminal: Terminal, container: HTMLElement) {
+        this.terminal = terminal;
+        this.container = container;
+        this.setupOverlayContainer();
+        this.attachEventListeners();
     }
     
-    private createLineElement(line: OutputLine): HTMLElement {
-        const div = document.createElement('div');
-        div.className = 'output-line';
-        
-        switch (line.type) {
-            case 'text':
-                div.classList.add('text-line');
-                this.renderText(line, div);
-                break;
-                
-            case 'latex-display':
-                div.classList.add('latex-display');
-                this.renderLatex(line.content, div, true);
-                break;
-                
-            case 'mixed':
-                div.classList.add('mixed-line');
-                this.renderMixed(line, div);
-                break;
-        }
-        
-        return div;
+    private setupOverlayContainer() {
+        this.overlayContainer = document.createElement('div');
+        this.overlayContainer.className = 'latex-overlay-container';
+        this.overlayContainer.style.cssText = `
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            z-index: 10;
+        `;
+        this.container.appendChild(this.overlayContainer);
     }
     
-    private renderLatex(latex: string, container: HTMLElement, display: boolean) {
+    createOverlay(region: LatexRegion, bufferPosition: BufferPosition): void {
+        const id = `latex-${Date.now()}-${Math.random()}`;
+        const overlay = document.createElement('div');
+        overlay.className = `latex-overlay latex-${region.type}`;
+        overlay.dataset.latexSource = region.type === 'inline' 
+            ? `$${region.latex}$` 
+            : `$$${region.latex}$$`;
+        
+        // Render with KaTeX
         try {
-            katex.render(latex, container, {
-                displayMode: display,
+            katex.render(region.latex, overlay, {
+                displayMode: region.type === 'display',
                 throwOnError: false,
                 trust: true
             });
         } catch (e) {
-            // Fallback to showing raw LaTeX
-            container.textContent = display ? `$$${latex}$$` : `$${latex}$`;
-            container.classList.add('latex-error');
+            console.error('KaTeX render error:', e);
+            overlay.textContent = region.placeholder;
+            overlay.classList.add('latex-error');
+        }
+        
+        // Position overlay
+        this.positionOverlay(overlay, bufferPosition);
+        
+        // Store reference
+        this.overlays.set(id, overlay);
+        this.overlayContainer.appendChild(overlay);
+        
+        // Track for cleanup
+        this.trackOverlayLifecycle(id, bufferPosition);
+    }
+    
+    private positionOverlay(overlay: HTMLElement, position: BufferPosition) {
+        // Get cell dimensions from terminal
+        const cellWidth = (this.terminal as any).renderer.dimensions.actualCellWidth;
+        const cellHeight = (this.terminal as any).renderer.dimensions.actualCellHeight;
+        
+        // Calculate pixel position
+        const x = position.col * cellWidth;
+        const y = (position.row - this.terminal.buffer.active.viewportY) * cellHeight;
+        
+        overlay.style.cssText += `
+            position: absolute;
+            left: ${x}px;
+            top: ${y}px;
+        `;
+    }
+    
+    private attachEventListeners() {
+        // Handle scrolling
+        this.terminal.onScroll(() => {
+            this.updateOverlayPositions();
+        });
+        
+        // Handle resize
+        this.terminal.onResize(() => {
+            this.updateOverlayPositions();
+        });
+        
+        // Handle buffer clear
+        this.terminal.onData((data) => {
+            if (data.includes('\x1b[2J') || data.includes('\x1b[3J')) {
+                this.clearAllOverlays();
+            }
+        });
+        
+        // Handle line overwrites
+        this.terminal.onRender((e) => {
+            this.checkForOverwrites(e.start, e.end);
+        });
+    }
+    
+    private updateOverlayPositions() {
+        for (const [id, overlay] of this.overlays) {
+            const position = this.getStoredPosition(id);
+            if (position) {
+                this.positionOverlay(overlay, position);
+            }
         }
     }
 }
-
 ```
 
-#### Phase 5: CSS Structure
-```css
-.virtual-terminal {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    background: var(--terminal-bg);
-}
-
-.virtual-output {
-    flex: 1;
-    overflow-y: auto;
-    padding: 10px;
-    font-family: 'Monaco', 'Menlo', monospace;
-    font-size: 14px;
-    line-height: 1.5;
-}
-
-.terminal-input {
-    flex-shrink: 0;
-    height: 30px;
-    border-top: 1px solid var(--terminal-border);
-    min-height: 30px;
-    max-height: 90px; /* Can expand for multi-line input */
-}
-
-.output-line {
-    white-space: pre-wrap;
-    margin: 2px 0;
-}
-
-.latex-display {
-    text-align: center;
-    margin: 10px 0;
-    padding: 10px;
-    background: var(--latex-bg);
-    border-radius: 4px;
-}
-
-.latex-inline {
-    display: inline-block;
-    vertical-align: middle;
-    padding: 0 4px;
-}
-
-.latex-error {
-    color: var(--error-color);
-    font-family: monospace;
-}
-
-/* ANSI color classes */
-.ansi-black { color: #000000; }
-.ansi-red { color: #cc0000; }
-.ansi-green { color: #4e9a06; }
-.ansi-yellow { color: #c4a000; }
-.ansi-blue { color: #3465a4; }
-.ansi-magenta { color: #75507b; }
-.ansi-cyan { color: #06989a; }
-.ansi-white { color: #d3d7cf; }
-```
-
-### Integration Points
-
-1. **PTY Creation**: Hook into existing pseudoterminal creation
-2. **Profile Support**: Work with all terminal profiles (bash, zsh, etc.)
-3. **Command Detection**: Identify prompts and separate input/output
-4. **State Management**: Save/restore virtual display state
-5. **Settings**: Toggle between virtual display and traditional terminal
-
-### Prompt Detection Strategy
+### Phase 4: Integration with Existing Terminal
 
 ```typescript
-class PromptDetector {
-    private promptPatterns = [
-        /\$\s*$/,           // Basic $ prompt
-        />\s*$/,            // Basic > prompt
-        /❯\s*$/,            // Fancy prompt
-        /\]\$\s*$/,         // Bracketed prompt
-        /\w+@\w+.*?\$\s*$/  // user@host prompt
+// File: src/terminal/pseudoterminal.ts (modified)
+export class Pseudoterminal {
+    private latexProcessor: LatexProcessor;
+    private originalWrite: (data: string | Uint8Array) => void;
+    
+    constructor(/*...*/) {
+        // ... existing constructor code ...
+        
+        // Initialize LaTeX processor
+        this.latexProcessor = new LatexProcessor(this.terminal, this.container);
+        
+        // Hook terminal.write BEFORE any data flows
+        this.hookTerminalWrite();
+    }
+    
+    private hookTerminalWrite() {
+        // Store original write function
+        this.originalWrite = this.terminal.write.bind(this.terminal);
+        
+        // Override terminal.write
+        this.terminal.write = (data: string | Uint8Array) => {
+            if (typeof data === 'string') {
+                // Process for LaTeX - only display-bound data reaches here
+                const processed = this.latexProcessor.processData(data);
+                this.originalWrite(processed);
+            } else {
+                // Binary data, pass through unchanged
+                this.originalWrite(data);
+            }
+        };
+    }
+    
+    // PTY connection remains unchanged - we don't touch it
+    private setupPtyConnection() {
+        // Standard PTY → terminal connection
+        this.pty.onData((data: string) => {
+            terminal.write(data); // Goes through our hook automatically
+        });
+        
+        // No PTY interception needed!
+    }
+}
+```
+
+## Edge Cases & Solutions
+
+### 1. Streaming LaTeX Input
+**Problem**: LaTeX expressions split across multiple PTY packets
+```
+Packet 1: "The equation $$\\frac{1"
+Packet 2: "}{2}$$ shows..."
+```
+
+**Solution**: Buffer incomplete LaTeX
+```typescript
+class StreamBuffer {
+    private buffer: string = "";
+    private timeout: NodeJS.Timeout;
+    
+    append(data: string): string | null {
+        this.buffer += data;
+        
+        // Clear old timeout
+        if (this.timeout) clearTimeout(this.timeout);
+        
+        // Check for complete LaTeX
+        if (this.hasCompleteLatex()) {
+            const result = this.buffer;
+            this.buffer = "";
+            return result;
+        }
+        
+        // Set timeout to flush incomplete LaTeX
+        this.timeout = setTimeout(() => {
+            if (this.buffer) {
+                this.flush();
+            }
+        }, 100); // 100ms timeout
+        
+        return null;
+    }
+}
+```
+
+### 2. Terminal Clear/Reset
+**Problem**: Overlays remain after terminal clear
+**Solution**: Listen for clear sequences
+```typescript
+terminal.onData((data) => {
+    const clearPatterns = [
+        '\x1b[2J',  // Clear screen
+        '\x1b[3J',  // Clear scrollback
+        '\x1b[H\x1b[2J', // Clear and home
+        '\x1bc'      // Full reset
     ];
     
-    isPrompt(line: string): boolean {
-        // Check if line ends with common prompt patterns
-        return this.promptPatterns.some(p => p.test(line));
+    if (clearPatterns.some(p => data.includes(p))) {
+        overlayManager.clearAllOverlays();
     }
+});
+```
+
+### 3. Line Overwrites (Progress bars, etc.)
+**Problem**: Content overwrites LaTeX placeholder
+**Solution**: Track line content state
+```typescript
+class LineTracker {
+    private lines: Map<number, LineState> = new Map();
     
-    detectPromptBoundary(buffer: string): number {
-        // Find where output ends and prompt begins
-        const lines = buffer.split('\n');
-        for (let i = lines.length - 1; i >= 0; i--) {
-            if (this.isPrompt(lines[i])) {
-                return i;
+    trackWrite(row: number, col: number, text: string) {
+        const state = this.lines.get(row) || new LineState();
+        
+        // Check if overwriting LaTeX region
+        if (state.hasLatexAt(col, col + text.length)) {
+            // Remove affected overlays
+            this.removeOverlaysForRegion(row, col, text.length);
+        }
+        
+        state.updateContent(col, text);
+        this.lines.set(row, state);
+    }
+}
+```
+
+### 4. Scrollback Buffer
+**Problem**: LaTeX in history needs rendering when scrolled into view
+**Solution**: Scan visible buffer periodically
+```typescript
+class ScrollbackScanner {
+    scanVisibleBuffer() {
+        const viewport = terminal.buffer.active.viewportY;
+        const rows = terminal.rows;
+        
+        for (let i = 0; i < rows; i++) {
+            const line = terminal.buffer.active.getLine(viewport + i);
+            if (line) {
+                const text = line.translateToString();
+                if (this.hasUnprocessedLatex(text)) {
+                    this.processLineLatex(viewport + i, text);
+                }
             }
         }
-        return -1;
     }
 }
 ```
 
-### Handling Edge Cases
-
-#### Interactive Programs (vim, less, htop)
+### 5. Terminal Resize
+**Problem**: Overlays misaligned after resize
+**Solution**: Recalculate positions
 ```typescript
-class VirtualTerminalDisplay {
-    private isInteractiveMode = false;
+terminal.onResize((size) => {
+    // Recalculate cell dimensions
+    const newCellWidth = terminal.renderer.dimensions.actualCellWidth;
+    const newCellHeight = terminal.renderer.dimensions.actualCellHeight;
     
-    detectInteractiveProgram(data: string): boolean {
-        // Check for alternate screen buffer activation
-        if (data.includes('\x1b[?1049h')) {
-            this.switchToFullTerminal();
-            return true;
-        }
-        return false;
-    }
-    
-    switchToFullTerminal() {
-        // Hide virtual display, show full xterm
-        this.outputDisplay.style.display = 'none';
-        this.inputTerminal.resize(80, 24); // Full size
-        this.isInteractiveMode = true;
-    }
-}
+    // Update all overlay positions
+    overlayManager.recalculateAllPositions(newCellWidth, newCellHeight);
+});
 ```
 
-#### Copy/Paste Support
+### 6. Copy/Paste
+**Problem**: Copying rendered LaTeX should copy source
+**Solution**: Custom selection handler
 ```typescript
-class SelectionManager {
-    getSelectedText(): string {
-        const selection = window.getSelection();
-        const text = selection.toString();
-        
-        // If LaTeX is selected, include source
-        const latexElements = this.getSelectedLatexElements();
-        if (latexElements.length > 0) {
-            return this.reconstructLatexSource(text, latexElements);
-        }
-        
-        return text;
-    }
+document.addEventListener('copy', (e) => {
+    const selection = window.getSelection();
+    const range = selection.getRangeAt(0);
     
-    reconstructLatexSource(text: string, elements: Element[]): string {
-        // Replace rendered LaTeX with original source
-        for (const elem of elements) {
-            const source = elem.getAttribute('data-latex-source');
-            if (source) {
-                text = text.replace(elem.textContent, source);
-            }
+    // Check if selection includes LaTeX overlays
+    const overlays = overlayContainer.querySelectorAll('.latex-overlay');
+    let text = selection.toString();
+    
+    overlays.forEach(overlay => {
+        if (range.intersectsNode(overlay)) {
+            // Replace rendered content with source
+            const source = overlay.dataset.latexSource;
+            text = text.replace(overlay.textContent, source);
         }
-        return text;
-    }
-}
+    });
+    
+    e.clipboardData.setData('text/plain', text);
+    e.preventDefault();
+});
 ```
 
-### Theme Consistency
-
-A critical concern is maintaining visual consistency between xterm.js and the virtual display. Users expect the virtual output to match their terminal theme exactly.
-
-#### Theme Extraction and Synchronization
-
-```typescript
-class ThemeManager {
-    private xtermTheme: ITheme;
-    private cssVariables: Map<string, string> = new Map();
-    
-    extractTheme() {
-        // Get theme from xterm
-        const theme = this.terminal.options.theme || {};
-        
-        // Extract all colors
-        this.cssVariables.set('--term-bg', theme.background || '#000000');
-        this.cssVariables.set('--term-fg', theme.foreground || '#ffffff');
-        this.cssVariables.set('--term-cursor', theme.cursor || '#ffffff');
-        this.cssVariables.set('--term-selection', theme.selection || '#4d4d4d');
-        
-        // ANSI colors (0-15)
-        this.cssVariables.set('--term-black', theme.black || '#000000');
-        this.cssVariables.set('--term-red', theme.red || '#cc0000');
-        this.cssVariables.set('--term-green', theme.green || '#4e9a06');
-        this.cssVariables.set('--term-yellow', theme.yellow || '#c4a000');
-        this.cssVariables.set('--term-blue', theme.blue || '#3465a4');
-        this.cssVariables.set('--term-magenta', theme.magenta || '#75507b');
-        this.cssVariables.set('--term-cyan', theme.cyan || '#06989a');
-        this.cssVariables.set('--term-white', theme.white || '#d3d7cf');
-        // ... plus bright variants
-        
-        // Extract font metrics from rendered terminal
-        this.extractComputedStyles();
-    }
-    
-    extractComputedStyles() {
-        const termElement = this.terminal.element;
-        const computed = window.getComputedStyle(termElement);
-        
-        // Font settings must match exactly
-        this.cssVariables.set('--term-font-family', computed.fontFamily);
-        this.cssVariables.set('--term-font-size', computed.fontSize);
-        this.cssVariables.set('--term-line-height', computed.lineHeight);
-        this.cssVariables.set('--term-letter-spacing', computed.letterSpacing);
-    }
-    
-    applyToVirtualDisplay(container: HTMLElement) {
-        // Apply all CSS variables to virtual display
-        for (const [key, value] of this.cssVariables) {
-            container.style.setProperty(key, value);
-        }
-    }
-}
-```
-
-#### CSS Variable Sharing
+## CSS Styling
 
 ```css
-/* Virtual display inherits terminal theme */
-.virtual-output {
-    /* Colors from xterm */
-    background: var(--term-bg);
-    color: var(--term-fg);
-    
-    /* Font must match exactly */
-    font-family: var(--term-font-family);
-    font-size: var(--term-font-size);
-    line-height: var(--term-line-height);
-    letter-spacing: var(--term-letter-spacing);
-    
-    /* Consistent rendering */
-    -webkit-font-smoothing: antialiased;
-    font-variant-ligatures: normal;
+.latex-overlay-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 10;
 }
 
-/* ANSI colors use CSS variables */
-.ansi-black { color: var(--term-black); }
-.ansi-red { color: var(--term-red); }
-/* ... all 16 colors */
-
-/* LaTeX with subtle differentiation */
-.latex-display {
-    /* Slightly lighter/darker than terminal bg */
-    background: color-mix(in srgb, var(--term-bg) 95%, var(--term-fg) 5%);
-    color: var(--term-fg);
-    
-    /* Override KaTeX colors */
-    --katex-text-color: var(--term-fg);
-    --katex-math-color: var(--term-fg);
+.latex-overlay {
+    position: absolute;
+    pointer-events: auto; /* Allow selection */
+    background: var(--terminal-background);
+    color: var(--terminal-foreground);
 }
-```
 
-#### Obsidian Theme Integration
+.latex-overlay.latex-inline {
+    display: inline-block;
+    vertical-align: middle;
+    /* Ensure it aligns with terminal text baseline */
+    transform: translateY(-0.1em);
+}
 
-```typescript
-class ObsidianThemeSync {
-    syncWithObsidian() {
-        const isDarkTheme = document.body.classList.contains('theme-dark');
-        
-        if (this.settings.theme === 'auto') {
-            // Use Obsidian's theme colors
-            const root = document.documentElement;
-            const obsidianBg = getComputedStyle(root)
-                .getPropertyValue('--background-primary');
-            const obsidianFg = getComputedStyle(root)
-                .getPropertyValue('--text-normal');
-            
-            // Fallback to Obsidian colors if no terminal theme
-            this.cssVariables.set('--term-bg', this.xtermTheme.background || obsidianBg);
-            this.cssVariables.set('--term-fg', this.xtermTheme.foreground || obsidianFg);
-        }
-    }
+.latex-overlay.latex-display {
+    display: block;
+    text-align: center;
+    padding: 0.2em 0;
+    /* Slightly different background for display math */
+    background: color-mix(in srgb, var(--terminal-background) 95%, var(--terminal-foreground) 5%);
+}
+
+.latex-overlay.latex-error {
+    color: var(--error-color);
+    font-family: monospace;
+    opacity: 0.7;
+}
+
+/* Ensure KaTeX uses terminal colors */
+.latex-overlay .katex {
+    color: inherit;
+    font-size: 1em;
+}
+
+.latex-overlay .katex-display {
+    margin: 0;
+    padding: 0;
 }
 ```
 
-#### Font Metric Consistency
-
-```typescript
-class FontMetrics {
-    ensureCharacterAlignment() {
-        // Measure character dimensions in both displays
-        const measureChar = (element: HTMLElement): {width: number, height: number} => {
-            const span = document.createElement('span');
-            span.textContent = 'M';
-            span.style.position = 'absolute';
-            span.style.visibility = 'hidden';
-            element.appendChild(span);
-            const metrics = {
-                width: span.offsetWidth,
-                height: span.offsetHeight
-            };
-            element.removeChild(span);
-            return metrics;
-        };
-        
-        const termMetrics = measureChar(this.inputTerminal.element);
-        const displayMetrics = measureChar(this.outputDisplay);
-        
-        // Adjust if mismatched
-        if (Math.abs(termMetrics.width - displayMetrics.width) > 0.5) {
-            // Adjust font-size or letter-spacing
-            this.adjustFontMetrics(termMetrics, displayMetrics);
-        }
-    }
-}
-```
-
-### Settings Integration
-```typescript
-interface LaTeXSettings {
-    enabled: boolean;
-    renderMode: 'virtual' | 'overlay' | 'disabled';
-    patterns: string[];  // Custom LaTeX patterns
-    renderer: 'katex' | 'mathjax';
-    theme: 'auto' | 'custom' | 'dracula' | 'monokai' | 'solarized';
-    customTheme?: ITheme;  // Custom color scheme
-    syncWithObsidian: boolean;  // Follow Obsidian's dark/light mode
-    scale: number;  // Font size multiplier
-    maxOutputLines: number;  // Buffer limit
-    preserveHistory: boolean;
-}
-```
-
-## File Change Summary
+## File Changes Summary
 
 ### Files to Modify
 
-| File | Changes Required | Impact |
-|------|-----------------|---------|
-| **view.ts** | Replace XtermTerminalEmulator with VirtualDisplay | Major refactor |
-| **emulator-addons.ts** | Remove RendererAddon class entirely | Delete ~60 lines |
-| **settings-data.ts** | Remove renderer preferences, add LaTeX settings | Minor changes |
-| **styles.css** | Add virtual display styling | Add ~100 lines |
+| File | Changes | Purpose |
+|------|---------|---------|
+| `pseudoterminal.ts` | Add terminal.write() hook | Intercept display data only |
+| `styles.css` | Add overlay styles | Visual appearance |
 
 ### Files to Create
 
 | File | Purpose | Size |
 |------|---------|------|
-| **virtual-display.ts** | Main virtual terminal implementation | ~600 lines |
-| **ansi-parser.ts** | Parse ANSI escape sequences | ~200 lines |
-| **latex-renderer.ts** | LaTeX detection and rendering | ~300 lines |
-| **prompt-detector.ts** | Detect shell prompts | ~100 lines |
+| `latex-processor.ts` | Main LaTeX detection and processing | ~300 lines |
+| `overlay-manager.ts` | HTML overlay positioning and lifecycle | ~400 lines |
+| `stream-buffer.ts` | Handle streaming LaTeX input | ~100 lines |
+| `line-tracker.ts` | Track terminal line state | ~150 lines |
 
-### Files Unchanged
+### Files to Remove
 
-| File | Why Unchanged |
-|------|--------------|
-| **main.ts** | Plugin initialization stays same |
-| **load.ts** | Command registration stays same |
-| **spawn.ts** | Terminal spawning logic stays same |
-| **pseudoterminal.ts** | Shell connection layer works as-is |
-| **profile-properties.ts** | Profile management unchanged |
+| File | Reason |
+|------|--------|
+| `latex-interceptor.ts` | No longer needed - was for PTY interception |
 
-### Removed Dependencies
+## Advantages of This Approach
 
-```typescript
-// No longer needed in package.json:
-- "@xterm/addon-canvas"
-- "@xterm/addon-webgl"
-- "@xterm/addon-fit"  // Causes resize bugs
-
-// Keep these:
-+ "@xterm/xterm"  // Still used for input terminal
-+ "@xterm/addon-search"  // Might adapt for virtual display
-+ "@xterm/addon-serialize"  // For state saving
-```
-
-### New Dependencies
-
-```typescript
-// Add to package.json:
-+ "katex": "^0.16.0"  // LaTeX rendering
-+ "@types/katex": "^0.16.0"
-+ "ansi-to-html": "^0.7.0"  // ANSI parsing helper (optional)
-```
-
-## Implementation Phases
-
-### Phase 1: Core Infrastructure (Week 1)
-- Create `virtual-display.ts` with basic structure
-- Set up split input/output layout
-- Connect PTY to virtual display
-- Basic text rendering (no ANSI/LaTeX yet)
-
-### Phase 2: Terminal Features (Week 2)
-- Implement ANSI color parsing
-- Add prompt detection
-- Handle interactive program switching
-- Implement scrollback buffer
-
-### Phase 3: LaTeX Integration (Week 3)
-- Add LaTeX pattern detection
-- Integrate KaTeX rendering
-- Handle inline vs display math
-- Implement theme consistency
-
-### Phase 4: Polish & Migration (Week 4)
-- Update Find functionality
-- Add settings UI
-- Create migration path from old terminals
-- Testing and bug fixes
-
-## Performance Considerations
-
-1. **Virtual scrolling**: Only render visible output lines
-2. **Debounced rendering**: Batch rapid output updates
-3. **LaTeX caching**: Cache rendered equations by content hash
-4. **Memory management**: Limit output buffer size
-5. **Lazy KaTeX loading**: Load only when LaTeX is detected
+1. **Minimal Changes** - Only hooks terminal.write(), no PTY modifications
+2. **Efficiency** - Only processes data that will be displayed (not all PTY traffic)
+3. **Preserves Terminal Features** - Scrolling, selection, reflow all work normally
+4. **Multi-line Support** - Overlays can span multiple lines visually
+5. **Performance** - Avoids processing control sequences, queries, and non-display data
+6. **Clean Separation** - LaTeX rendering completely separate from PTY layer
+7. **Maintainable** - Single interception point, clear data flow
 
 ## Testing Strategy
 
-1. **Unit tests**: Parser, prompt detection, ANSI handling
-2. **Integration tests**: PTY connection, input/output routing
-3. **Visual tests**: LaTeX rendering, layout, scrolling
-4. **Performance tests**: Large output, rapid updates
-5. **Compatibility tests**: Different shells, terminal programs
+1. **Unit Tests**
+   - LaTeX pattern detection
+   - Placeholder generation
+   - Buffer management
 
-## Advantages Over Alternatives
+2. **Integration Tests**
+   - PTY data flow
+   - Overlay positioning
+   - Event handling
 
-| Feature | Virtual Display | Overlay | Grid Modification |
-|---------|----------------|---------|-------------------|
-| Multi-line LaTeX | ✅ Perfect | ❌ Overlaps | ❌ Breaks grid |
-| Terminal features | ✅ Preserved | ✅ Preserved | ⚠️ Partially broken |
-| Performance | ✅ Good | ✅ Good | ❌ Poor |
-| Complexity | 🟡 Moderate | 🟢 Low | 🔴 High |
-| Maintenance | ✅ Easy | ✅ Easy | ❌ Hard |
-| User Experience | ✅ Best | 🟡 OK | ❌ Poor |
+3. **Edge Case Tests**
+   - Streaming input
+   - Terminal operations (clear, reset)
+   - Scrolling and resize
+   - Copy/paste
+
+4. **Performance Tests**
+   - Large LaTeX expressions
+   - Rapid updates
+   - Many overlays
+
+## Implementation Timeline
+
+1. **Week 1**: Core interception and detection
+2. **Week 2**: Overlay rendering and positioning
+3. **Week 3**: Edge case handling
+4. **Week 4**: Polish and testing

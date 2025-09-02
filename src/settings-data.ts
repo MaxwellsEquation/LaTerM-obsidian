@@ -87,6 +87,7 @@ export interface Settings extends PluginContext.Settings {
 
 	readonly exposeInternalModules: boolean
 	readonly interceptLogging: boolean
+	readonly enableTerminalWriteLogging: boolean
 	// Renderer preference removed - DOM-only now
 }
 export namespace Settings {
@@ -106,6 +107,7 @@ export namespace Settings {
 		addToCommand: true,
 		addToContextMenu: true,
 		createInstanceNearExistingOnes: true,
+		enableTerminalWriteLogging: true,
 		errorNoticeTimeout: NOTICE_NO_TIMEOUT,
 		exposeInternalModules: true,
 		focusOnNewInstance: true,
@@ -1181,6 +1183,12 @@ export namespace Settings {
 				DEFAULT,
 				unc,
 				"createInstanceNearExistingOnes",
+				["boolean"],
+			),
+			enableTerminalWriteLogging: fixTyped(
+				DEFAULT,
+				unc,
+				"enableTerminalWriteLogging",
 				["boolean"],
 			),
 			errorNoticeTimeout: fixTyped(

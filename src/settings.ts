@@ -339,6 +339,27 @@ export class SettingTab extends AdvancedSettingTab<Settings> {
 						() => { this.postMutate() },
 					))
 			})
+			.newSetting(containerEl, setting => {
+				setting
+					.setName("Enable Terminal Write Logging")
+					.setDesc("Log terminal display data for debugging (creates logs in vault's .obsidian/plugins/laterm/logs/)")
+					.addToggle(linkSetting(
+						() => settings.value.enableTerminalWriteLogging,
+						async value => settings.mutate(settingsM => {
+							settingsM.enableTerminalWriteLogging = value
+						}),
+						() => { this.postMutate() },
+					))
+					.addExtraButton(resetButton(
+						"📝",
+						i18n.t("settings.reset"),
+						async () => settings.mutate(settingsM => {
+							settingsM.enablePtyLogging =
+								Settings.DEFAULT.enablePtyLogging
+						}),
+						() => { this.postMutate() },
+					))
+			})
 			// Renderer setting removed - DOM-only now
 	}
 
