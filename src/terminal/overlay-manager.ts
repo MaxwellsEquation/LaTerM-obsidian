@@ -13,6 +13,7 @@ export class OverlayManager {
 	private overlays: Map<string, HTMLDivElement> = new Map()
 	private enabled: boolean = true
 	private scrollDebounceTimer: number | null = null
+	private cachedColors: { background: string, foreground: string } | null = null
 	
 	constructor(terminal: Terminal, latexMap: LatexHashMap) {
 		this.terminal = terminal
@@ -174,6 +175,46 @@ export class OverlayManager {
 	}
 	
 	/**
+	 * Get the terminal's theme colors (cached)
+	 */
+	private getTerminalColors(): { background: string, foreground: string } {
+		// Return cached colors if available
+		if (this.cachedColors) {
+			return this.cachedColors
+		}
+		
+		// Access the terminal's theme through the xterm.js API
+		const theme = this.terminal.options.theme
+		
+		// Determine colors based on theme
+		if (theme && theme.background && theme.foreground) {
+			// Use the actual theme colors
+			this.cachedColors = { 
+				background: theme.background, 
+				foreground: theme.foreground 
+			}
+			console.log('[LaTerM] Using terminal theme colors:', this.cachedColors)
+		} else {
+			// When theme is empty {}, xterm.js uses its internal defaults
+			// which are pure black background and white foreground
+			this.cachedColors = {
+				background: '#000000',  // xterm.js default when no theme
+				foreground: '#ffffff'   // xterm.js default when no theme
+			}
+			console.log('[LaTerM] Using xterm.js default colors (no theme set):', this.cachedColors)
+		}
+		
+		return this.cachedColors
+	}
+	
+	/**
+	 * Clear cached colors (call if theme changes)
+	 */
+	public clearColorCache(): void {
+		this.cachedColors = null
+	}
+	
+	/**
 	 * Create or update an overlay for a hash at a specific position
 	 */
 	private createOrUpdateOverlay(hash: string, row: number, col: number): void {
@@ -190,6 +231,9 @@ export class OverlayManager {
 			displayWidth: entry.displayWidth
 		})
 		
+		// Get terminal theme colors
+		const colors = this.getTerminalColors()
+		
 		// Get or create overlay element
 		let overlay = this.overlays.get(hash)
 		if (!overlay) {
@@ -201,8 +245,8 @@ export class OverlayManager {
 			overlay.style.cssText = `
 				position: absolute;
 				pointer-events: none;
-				background: var(--background-primary);
-				color: var(--text-normal);
+				background: ${colors.background};
+				color: ${colors.foreground};
 				font-size: ${cellDims.height * 0.7}px;
 				line-height: 1;
 				min-width: ${7 * cellDims.width}px;
@@ -239,6 +283,10 @@ export class OverlayManager {
 		overlay.style.minWidth = `${7 * cellDims.width}px`
 		// Use zoom-adjusted width for proper scaling
 		overlay.style.width = adjustedWidth
+		// Update colors in case terminal theme changed
+		const currentColors = this.getTerminalColors()
+		overlay.style.background = currentColors.background
+		overlay.style.color = currentColors.foreground
 		
 		// Width should already be correct from pre-rendering
 		// Just log if there's a discrepancy for debugging
