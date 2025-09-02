@@ -153,11 +153,29 @@ export class XtermTerminalEmulator<A> {
 	}
 
 	public async resize(mustResizePseudoterminal = true): Promise<void> {
-		const { addons, resizeEmulator, resizePTY } = this,
+		const { addons, resizeEmulator, resizePTY, terminal, element } = this,
 			{ fit } = addons,
 			dim = fit.proposeDimensions()
 		if (dim) {
-			const { cols, rows } = dim
+			let { cols, rows } = dim
+			
+			// Manual row calculation to fix vertical sizing
+			// Use parent element height to avoid feedback loop
+			const parent = element.parentElement
+			if (parent) {
+				const parentHeight = parent.clientHeight
+				const lineHeight = terminal.options.lineHeight || 1
+				const fontSize = terminal.options.fontSize || 14
+				const cellHeight = Math.ceil(fontSize * lineHeight)
+				
+				// Calculate rows based on parent's available height
+				// Subtract some padding to prevent overflow
+				const calculatedRows = Math.floor((parentHeight - 10) / cellHeight)
+				if (calculatedRows > 0 && isFinite(calculatedRows)) {
+					rows = calculatedRows
+				}
+			}
+			
 			if (isFinite(cols) && isFinite(rows)) {
 				await Promise.all([
 					resizeEmulator(cols, rows),

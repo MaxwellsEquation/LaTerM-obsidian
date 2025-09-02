@@ -860,13 +860,29 @@ export class TerminalView extends ItemView {
 						this.find?.setResults(results)
 					})
 
-					emulator.resize().catch(warn)
+					// Initial resize - wait for layout to settle
+					setTimeout(() => {
+						emulator.resize().catch(warn)
+					}, 100)
+					
+					// Debounced resize - only resize after user stops resizing
+					let resizeTimeout: NodeJS.Timeout | null = null
 					onResize(ele, ent => {
 						if (ent.contentBoxSize
 							.every(size => size.blockSize <= 0 || size.inlineSize <= 0)) {
 							return
 						}
-						emulator.resize(false).catch(warn)
+						
+						// Clear existing timeout
+						if (resizeTimeout) {
+							clearTimeout(resizeTimeout)
+						}
+						
+						// Set new timeout - resize after 1000ms of no resize events
+						resizeTimeout = setTimeout(() => {
+							emulator.resize(false).catch(warn)
+							resizeTimeout = null
+						}, 1000)
 					})
 					this.emulator = emulator
 					if (focus) { terminal.focus() }
