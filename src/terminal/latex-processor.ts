@@ -70,7 +70,7 @@ export class LatexProcessor {
 			try {
 				const renderer = (this.terminal as any)._core?._renderService
 				if (renderer?.dimensions?.actualCellHeight) {
-					fontSize = renderer.dimensions.actualCellHeight * 0.6
+					fontSize = renderer.dimensions.actualCellHeight * 0.7
 				}
 			} catch (e) {
 				// Use fallback

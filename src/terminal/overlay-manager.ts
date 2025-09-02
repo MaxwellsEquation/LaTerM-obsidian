@@ -177,7 +177,7 @@ export class OverlayManager {
 				pointer-events: none;
 				background: var(--background-primary);
 				color: var(--text-normal);
-				font-size: ${cellDims.height * 0.6}px;
+				font-size: ${cellDims.height * 0.7}px;
 				line-height: 1;
 				min-width: ${7 * cellDims.width}px;
 				white-space: nowrap;
@@ -201,7 +201,7 @@ export class OverlayManager {
 		// Update position and size (cell dimensions may have changed on zoom)
 		overlay.style.left = `${x}px`
 		overlay.style.top = `${y}px`
-		overlay.style.fontSize = `${cellDims.height * 0.6}px`
+		overlay.style.fontSize = `${cellDims.height * 0.7}px`
 		overlay.style.minWidth = `${7 * cellDims.width}px`
 		// Let width be natural but enforce minimum
 		overlay.style.width = 'auto'
