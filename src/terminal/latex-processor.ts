@@ -54,7 +54,7 @@ export class LatexProcessor {
 	/**
 	 * Render LaTeX and measure its width in terminal cells
 	 */
-	private renderAndMeasure(latex: string, isDisplay: boolean = false): { html: string, width: number, error?: string } {
+	private renderAndMeasure(latex: string, isDisplay: boolean = false): { html: string, width: number, pixelWidth: number, error?: string } {
 		try {
 			// Render with KaTeX
 			const html = katex.renderToString(latex, {
@@ -99,7 +99,7 @@ export class LatexProcessor {
 			// Ensure minimum width of 7 cells for hash marker
 			const finalWidth = Math.max(cells, 7)
 			
-			return { html, width: finalWidth }
+			return { html, width: finalWidth, pixelWidth }
 		} catch (error) {
 			const errorMsg = error instanceof Error ? error.message : 'Unknown error'
 			console.error(`[LaTerM] KaTeX render error for "${latex}":`, error)
@@ -107,6 +107,7 @@ export class LatexProcessor {
 			return { 
 				html: `<span style="color: red; font-family: monospace;">[LaTeX Error]</span>`,
 				width: 12,
+				pixelWidth: 120, // Approximate for error message
 				error: errorMsg
 			}
 		}
@@ -172,15 +173,22 @@ export class LatexProcessor {
 			const hash = this.latexMap.generateHash(latex)
 			
 			// Render and measure IMMEDIATELY
-			const { html, width, error } = this.renderAndMeasure(latex, true)
+			const { html, width, pixelWidth, error } = this.renderAndMeasure(latex, true)
+			
+			// Get current cell dimensions using public API
+			const cellDims = this.getCellDimensions()
+			const cellWidth = cellDims.width
+			const cellHeight = cellDims.height
 			
 			// Store in hashmap with rendered HTML
 			const entry: LatexEntry = {
 				latex: latex,
 				displayWidth: width,
 				displayHeight: 1,
-				renderedHTML: error ? undefined : html,
-				renderError: error
+				pixelWidth: pixelWidth,
+				originalCellWidth: cellWidth,
+				originalCellHeight: cellHeight,
+				...(error ? { renderError: error } : { renderedHTML: html })
 			}
 			this.latexMap.set(hash, entry)
 			
@@ -212,15 +220,22 @@ export class LatexProcessor {
 			const hash = this.latexMap.generateHash(latex)
 			
 			// Render and measure IMMEDIATELY
-			const { html, width, error } = this.renderAndMeasure(latex, false)
+			const { html, width, pixelWidth, error } = this.renderAndMeasure(latex, false)
+			
+			// Get current cell dimensions using public API
+			const cellDims = this.getCellDimensions()
+			const cellWidth = cellDims.width
+			const cellHeight = cellDims.height
 			
 			// Store in hashmap with rendered HTML
 			const entry: LatexEntry = {
 				latex: latex,
 				displayWidth: width,
 				displayHeight: 1,
-				renderedHTML: error ? undefined : html,
-				renderError: error
+				pixelWidth: pixelWidth,
+				originalCellWidth: cellWidth,
+				originalCellHeight: cellHeight,
+				...(error ? { renderError: error } : { renderedHTML: html })
 			}
 			this.latexMap.set(hash, entry)
 			
@@ -343,6 +358,41 @@ export class LatexProcessor {
 	 */
 	public getLatexMap(): LatexHashMap {
 		return this.latexMap
+	}
+	
+	/**
+	 * Get terminal cell dimensions using public API
+	 */
+	private getCellDimensions(): { width: number, height: number } {
+		// Use public API to calculate cell dimensions
+		const termElement = this.terminal.element
+		if (!termElement) {
+			console.warn('[LaTerM] Terminal element not available')
+			return { width: 8, height: 16 } // Fallback values
+		}
+		
+		// Get the viewport element which contains the actual terminal content
+		const viewport = termElement.querySelector('.xterm-viewport') as HTMLElement
+		const screen = termElement.querySelector('.xterm-screen') as HTMLElement
+		
+		// Use the screen element for dimensions as it represents the actual character grid
+		const element = screen || viewport || termElement
+		
+		// Calculate cell dimensions from terminal grid
+		// Use clientWidth/Height to exclude scrollbars
+		const width = element.clientWidth / this.terminal.cols
+		const height = element.clientHeight / this.terminal.rows
+		
+		console.log('[LaTerM] LaTeX Processor cell dimensions:', {
+			elementWidth: element.clientWidth,
+			elementHeight: element.clientHeight,
+			cols: this.terminal.cols,
+			rows: this.terminal.rows,
+			calculatedCellWidth: width,
+			calculatedCellHeight: height
+		})
+		
+		return { width, height }
 	}
 	
 	/**

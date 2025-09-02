@@ -7,6 +7,9 @@ export interface LatexEntry {
 	latex: string           // Original LaTeX expression
 	displayWidth: number    // Calculated width in terminal cells
 	displayHeight: number   // Calculated height in terminal lines (usually 1)
+	pixelWidth: number      // Exact pixel width at measurement time
+	originalCellWidth: number  // Cell width when measured (for zoom calculations)
+	originalCellHeight: number // Cell height when measured (for zoom calculations)
 	renderedHTML?: string   // Cached KaTeX/MathJax rendered HTML
 	renderError?: string    // Error if rendering failed
 }

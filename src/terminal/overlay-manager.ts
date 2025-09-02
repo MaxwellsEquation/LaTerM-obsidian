@@ -137,15 +137,40 @@ export class OverlayManager {
 	}
 	
 	/**
-	 * Get terminal cell dimensions
+	 * Get terminal cell dimensions using public API
 	 */
 	private getCellDimensions(): { width: number, height: number } {
-		// Access internal dimensions directly
-		const renderer = (this.terminal as any)._core._renderService
-		return {
-			width: renderer.dimensions.actualCellWidth,
-			height: renderer.dimensions.actualCellHeight
+		// Use public API to calculate cell dimensions
+		// This is more reliable than accessing internal renderer properties
+		const termElement = this.terminal.element
+		if (!termElement) {
+			console.warn('[LaTerM] Terminal element not available')
+			return { width: 8, height: 16 } // Fallback values
 		}
+		
+		// Get the viewport element which contains the actual terminal content
+		// This excludes scrollbars and other UI elements
+		const viewport = termElement.querySelector('.xterm-viewport') as HTMLElement
+		const screen = termElement.querySelector('.xterm-screen') as HTMLElement
+		
+		// Use the screen element for dimensions as it represents the actual character grid
+		const element = screen || viewport || termElement
+		
+		// Calculate cell dimensions from terminal grid
+		// Use clientWidth/Height to exclude scrollbars
+		const width = element.clientWidth / this.terminal.cols
+		const height = element.clientHeight / this.terminal.rows
+		
+		console.log('[LaTerM] Cell dimensions from public API:', {
+			elementWidth: element.clientWidth,
+			elementHeight: element.clientHeight,
+			cols: this.terminal.cols,
+			rows: this.terminal.rows,
+			calculatedCellWidth: width,
+			calculatedCellHeight: height
+		})
+		
+		return { width, height }
 	}
 	
 	/**
@@ -158,6 +183,12 @@ export class OverlayManager {
 			return
 		}
 		console.log(`[LaTerM] Creating overlay for LaTeX: ${entry.latex}`)
+		console.log(`[LaTerM] Entry fields:`, {
+			pixelWidth: entry.pixelWidth,
+			originalCellWidth: entry.originalCellWidth,
+			originalCellHeight: entry.originalCellHeight,
+			displayWidth: entry.displayWidth
+		})
 		
 		// Get or create overlay element
 		let overlay = this.overlays.get(hash)
@@ -193,13 +224,21 @@ export class OverlayManager {
 		const x = col * cellDims.width
 		const y = row * cellDims.height
 		
+		// Calculate zoom-adjusted width using pixel measurements
+		const zoomRatio = cellDims.width / entry.originalCellWidth
+		const scaledPixelWidth = entry.pixelWidth * zoomRatio
+		const adjustedWidth = `${scaledPixelWidth}px`
+		
 		// Update position and size (cell dimensions may have changed on zoom)
 		overlay.style.left = `${x}px`
 		overlay.style.top = `${y}px`
 		overlay.style.fontSize = `${cellDims.height * 0.7}px`
+		// Ensure consistent vertical alignment
+		overlay.style.lineHeight = `${cellDims.height}px`
+		overlay.style.verticalAlign = 'middle'
 		overlay.style.minWidth = `${7 * cellDims.width}px`
-		// Let width be natural but enforce minimum
-		overlay.style.width = 'auto'
+		// Use zoom-adjusted width for proper scaling
+		overlay.style.width = adjustedWidth
 		
 		// Width should already be correct from pre-rendering
 		// Just log if there's a discrepancy for debugging
