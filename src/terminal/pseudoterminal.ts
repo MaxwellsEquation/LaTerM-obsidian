@@ -889,20 +889,30 @@ class WindowsPseudoterminal implements Pseudoterminal {
 
 	public async pipe(terminal: Terminal): Promise<void> {
 		let init = !this.conhost
-		const shell = await this.shell,
-			reader = (chunk: Buffer | string): void => {
-				if (!init) {
-					init = true
-					return
-				}
-				tWritePromise(terminal, chunk).catch((error: unknown) => {
-					activeSelf(terminal.element).console.error(error)
-				})
+		const shell = await this.shell
+		
+		// Import and create LaTeX interceptor
+		const { LatexInterceptor } = await import("./latex-interceptor.js")
+		const interceptor = new LatexInterceptor(terminal)
+		
+		const reader = (chunk: Buffer | string): void => {
+			if (!init) {
+				init = true
+				return
 			}
+			// Pass data through interceptor before sending to terminal
+			const data = chunk.toString()
+			const processed = interceptor.process(data)
+			
+			tWritePromise(terminal, processed).catch((error: unknown) => {
+				activeSelf(terminal.element).console.error(error)
+			})
+		}
 		await clearTerminal(terminal, true)
 		terminal.loadAddon(new DisposerAddon(
 			() => { shell.stdout.removeListener("data", reader) },
 			() => { shell.stderr.removeListener("data", reader) },
+			() => { interceptor.dispose() }, // Clean up interceptor
 		))
 		shell.stdout.on("data", reader)
 		shell.stderr.on("data", reader)
@@ -977,16 +987,26 @@ class UnixPseudoterminal implements Pseudoterminal {
 	}
 
 	public async pipe(terminal: Terminal): Promise<void> {
-		const shell = await this.shell,
-			reader = (chunk: Buffer | string): void => {
-				tWritePromise(terminal, chunk).catch((error: unknown) => {
-					activeSelf(terminal.element).console.error(error)
-				})
-			}
+		const shell = await this.shell
+		
+		// Import and create LaTeX interceptor
+		const { LatexInterceptor } = await import("./latex-interceptor.js")
+		const interceptor = new LatexInterceptor(terminal)
+		
+		const reader = (chunk: Buffer | string): void => {
+			// Pass data through interceptor before sending to terminal
+			const data = chunk.toString()
+			const processed = interceptor.process(data)
+			
+			tWritePromise(terminal, processed).catch((error: unknown) => {
+				activeSelf(terminal.element).console.error(error)
+			})
+		}
 		await clearTerminal(terminal, true)
 		terminal.loadAddon(new DisposerAddon(
 			() => { shell.stdout.removeListener("data", reader) },
 			() => { shell.stderr.removeListener("data", reader) },
+			() => { interceptor.dispose() }, // Clean up interceptor
 		))
 		shell.stdout.on("data", reader)
 		shell.stderr.on("data", reader)
