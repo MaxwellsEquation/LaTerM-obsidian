@@ -891,14 +891,18 @@ class WindowsPseudoterminal implements Pseudoterminal {
 		let init = !this.conhost
 		const shell = await this.shell
 		
-		// Import and create LaTeX processor and terminal write logger
+		// Import and create LaTeX processor, overlay manager, and terminal write logger
 		const { LatexProcessor } = await import("./latex-processor.js")
+		const { OverlayManager } = await import("./overlay-manager.js")
 		const { TerminalWriteLogger } = await import("./terminal-write-logger.js")
 		const { settings } = this.context
 		const vaultPath = (this.context.app.vault.adapter as any).basePath || ""
 		
 		// Create LaTeX processor first (processes LaTeX into placeholders)
 		const latexProcessor = new LatexProcessor(terminal, settings.value.enableTerminalWriteLogging, vaultPath)
+		
+		// Create overlay manager (renders LaTeX overlays)
+		const overlayManager = new OverlayManager(terminal, latexProcessor.getLatexMap())
 		
 		// Create logger second (logs the processed output)
 		const logger = new TerminalWriteLogger(terminal, settings.value.enableTerminalWriteLogging, vaultPath)
@@ -919,6 +923,7 @@ class WindowsPseudoterminal implements Pseudoterminal {
 		terminal.loadAddon(new DisposerAddon(
 			() => { shell.stdout.removeListener("data", reader) },
 			() => { shell.stderr.removeListener("data", reader) },
+			() => { overlayManager.dispose() }, // Clean up overlay manager
 			() => { latexProcessor.dispose() }, // Clean up LaTeX processor
 			() => { logger.dispose() }, // Clean up logger
 		))
@@ -997,14 +1002,18 @@ class UnixPseudoterminal implements Pseudoterminal {
 	public async pipe(terminal: Terminal): Promise<void> {
 		const shell = await this.shell
 		
-		// Import and create LaTeX processor and terminal write logger
+		// Import and create LaTeX processor, overlay manager, and terminal write logger
 		const { LatexProcessor } = await import("./latex-processor.js")
+		const { OverlayManager } = await import("./overlay-manager.js")
 		const { TerminalWriteLogger } = await import("./terminal-write-logger.js")
 		const { settings } = this.context
 		const vaultPath = (this.context.app.vault.adapter as any).basePath || ""
 		
 		// Create LaTeX processor first (processes LaTeX into placeholders)
 		const latexProcessor = new LatexProcessor(terminal, settings.value.enableTerminalWriteLogging, vaultPath)
+		
+		// Create overlay manager (renders LaTeX overlays)
+		const overlayManager = new OverlayManager(terminal, latexProcessor.getLatexMap())
 		
 		// Create logger second (logs the processed output)
 		const logger = new TerminalWriteLogger(terminal, settings.value.enableTerminalWriteLogging, vaultPath)
@@ -1021,6 +1030,7 @@ class UnixPseudoterminal implements Pseudoterminal {
 		terminal.loadAddon(new DisposerAddon(
 			() => { shell.stdout.removeListener("data", reader) },
 			() => { shell.stderr.removeListener("data", reader) },
+			() => { overlayManager.dispose() }, // Clean up overlay manager
 			() => { latexProcessor.dispose() }, // Clean up LaTeX processor
 			() => { logger.dispose() }, // Clean up logger
 		))

@@ -31,7 +31,11 @@ const ARGV_PRODUCTION = 2,
 		inject: ["@polyipseity/obsidian-plugin-library/inject"],
 		jsx: "transform",
 		legalComments: "inline",
-		loader: {},
+		loader: {
+			".woff": "dataurl",
+			".woff2": "dataurl",
+			".ttf": "dataurl"
+		},
 		logLevel: "info",
 		logLimit: 0,
 		metafile: true,

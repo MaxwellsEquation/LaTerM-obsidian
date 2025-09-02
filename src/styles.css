@@ -1,3 +1,4 @@
 @import "@polyipseity/obsidian-plugin-library/style";
 @import "./terminal/emulator.css";
 @import "./terminal/view.css";
+@import "katex/dist/katex.min.css";

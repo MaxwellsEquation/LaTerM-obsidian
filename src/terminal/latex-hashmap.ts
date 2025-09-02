@@ -7,6 +7,8 @@ export interface LatexEntry {
 	latex: string           // Original LaTeX expression
 	displayWidth: number    // Calculated width in terminal cells
 	displayHeight: number   // Calculated height in terminal lines (usually 1)
+	renderedHTML?: string   // Cached KaTeX/MathJax rendered HTML
+	renderError?: string    // Error if rendering failed
 }
 
 export class LatexHashMap {
