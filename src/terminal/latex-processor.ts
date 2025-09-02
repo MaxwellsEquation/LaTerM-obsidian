@@ -66,15 +66,8 @@ export class LatexProcessor {
 			})
 			
 			// Get terminal font size for accurate measurement
-			let fontSize = 14 // fallback
-			try {
-				const renderer = (this.terminal as any)._core?._renderService
-				if (renderer?.dimensions?.actualCellHeight) {
-					fontSize = renderer.dimensions.actualCellHeight * 0.7
-				}
-			} catch (e) {
-				// Use fallback
-			}
+			const renderer = (this.terminal as any)._core._renderService
+			const fontSize = renderer.dimensions.actualCellHeight * 0.7
 			
 			// Create temporary element to measure
 			const measurer = document.createElement('div')
@@ -95,16 +88,8 @@ export class LatexProcessor {
 			
 			// Measure and calculate terminal cells needed
 			const pixelWidth = measurer.offsetWidth
-			// Try to get actual cell width from terminal
-			let cellWidth = 9 // fallback
-			try {
-				const renderer = (this.terminal as any)._core?._renderService
-				if (renderer?.dimensions?.actualCellWidth) {
-					cellWidth = renderer.dimensions.actualCellWidth
-				}
-			} catch (e) {
-				// Use fallback
-			}
+			// Get actual cell width from terminal
+			const cellWidth = renderer.dimensions.actualCellWidth
 			// Calculate cells needed without extra padding
 			const cells = Math.ceil(pixelWidth / cellWidth)
 			

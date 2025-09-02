@@ -140,17 +140,12 @@ export class OverlayManager {
 	 * Get terminal cell dimensions
 	 */
 	private getCellDimensions(): { width: number, height: number } {
-		// Access internal dimensions (may need adjustment based on xterm version)
-		const renderer = (this.terminal as any)._core?._renderService
-		if (renderer && renderer.dimensions) {
-			return {
-				width: renderer.dimensions.actualCellWidth || 9,
-				height: renderer.dimensions.actualCellHeight || 17
-			}
+		// Access internal dimensions directly
+		const renderer = (this.terminal as any)._core._renderService
+		return {
+			width: renderer.dimensions.actualCellWidth,
+			height: renderer.dimensions.actualCellHeight
 		}
-		
-		// Fallback dimensions
-		return { width: 9, height: 17 }
 	}
 	
 	/**
