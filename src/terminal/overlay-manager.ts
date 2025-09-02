@@ -32,6 +32,26 @@ export class OverlayManager {
 			overflow: hidden;
 		`
 		
+		// Add global styles to reduce KaTeX spacing
+		const styleElement = document.createElement('style')
+		styleElement.textContent = `
+			.latex-overlay-container .katex {
+				margin: 0 !important;
+				vertical-align: baseline !important;
+			}
+			.latex-overlay-container .katex-display {
+				margin: 0 !important;
+				padding: 0 !important;
+			}
+			.latex-overlay-container .katex .base {
+				vertical-align: baseline !important;
+			}
+			.latex-overlay-container .katex-html {
+				padding: 0 !important;
+			}
+		`
+		this.overlayContainer.appendChild(styleElement)
+		
 		// Attach directly to terminal element (xterm container)
 		const terminalElement = terminal.element
 		if (terminalElement) {
