@@ -867,23 +867,32 @@ export class TerminalView extends ItemView {
 					
 					// Debounced resize - only resize after user stops resizing
 					let resizeTimeout: NodeJS.Timeout | null = null
-					onResize(ele, ent => {
-						if (ent.contentBoxSize
-							.every(size => size.blockSize <= 0 || size.inlineSize <= 0)) {
-							return
-						}
-						
-						// Clear existing timeout
-						if (resizeTimeout) {
-							clearTimeout(resizeTimeout)
-						}
-						
-						// Set new timeout - resize after 1000ms of no resize events
-						resizeTimeout = setTimeout(() => {
-							emulator.resize(false).catch(warn)
-							resizeTimeout = null
-						}, 1000)
-					})
+					
+					// Watch the parent element for size changes instead of the terminal element
+					// The terminal element doesn't resize automatically - we need to detect parent changes
+					const parentElement = ele.parentElement
+					if (parentElement) {
+						onResize(parentElement, ent => {
+							// Check if we have valid dimensions
+							const hasValidSize = ent.contentBoxSize
+								.some(size => size.blockSize > 0 && size.inlineSize > 0)
+							
+							if (!hasValidSize) {
+								return
+							}
+							
+							// Clear existing timeout
+							if (resizeTimeout) {
+								clearTimeout(resizeTimeout)
+							}
+							
+							// Set new timeout - resize after 1000ms of no resize events
+							resizeTimeout = setTimeout(() => {
+								emulator.resize(false).catch(warn)
+								resizeTimeout = null
+							}, 1000)
+						})
+					}
 					this.emulator = emulator
 					if (focus) { terminal.focus() }
 				} catch (error) {

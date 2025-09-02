@@ -169,8 +169,9 @@ export class XtermTerminalEmulator<A> {
 				const cellHeight = Math.ceil(fontSize * lineHeight)
 				
 				// Calculate rows based on parent's available height
-				// Subtract some padding to prevent overflow
-				const calculatedRows = Math.floor((parentHeight - 10) / cellHeight)
+				// Subtract more padding to account for scrollbar and prevent overflow
+				// This ensures we're slightly smaller than the container
+				const calculatedRows = Math.floor((parentHeight - 20) / cellHeight) - 1
 				if (calculatedRows > 0 && isFinite(calculatedRows)) {
 					rows = calculatedRows
 				}
