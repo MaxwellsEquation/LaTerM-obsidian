@@ -88,6 +88,7 @@ export interface Settings extends PluginContext.Settings {
 	readonly exposeInternalModules: boolean
 	readonly interceptLogging: boolean
 	readonly enableTerminalWriteLogging: boolean
+	readonly theme: string
 	// Renderer preference removed - DOM-only now
 }
 export namespace Settings {
@@ -128,6 +129,7 @@ export namespace Settings {
 			"win32IntegratedDefault",
 		] satisfies readonly (keyof typeof PROFILE_PRESETS)[])
 			.map(key => [key, PROFILE_PRESETS[key]])),
+		theme: "{}",
 	})
 
 	export const DEFAULTABLE_LANGUAGES =
@@ -1261,6 +1263,12 @@ export namespace Settings {
 				}
 				return cloneAsWritable(defaults2)
 			})(),
+			theme: fixTyped(
+				DEFAULT,
+				unc,
+				"theme",
+				["string"],
+			),
 		})
 	}
 }

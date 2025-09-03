@@ -790,6 +790,18 @@ export class TerminalView extends ItemView {
 									? {}
 									: cloneAsWritable(profile.terminalOptions, cloneDeep),
 								allowProposedApi: true,
+								theme: profile.type === "invalid" 
+									? {}
+									: (() => {
+										try {
+											const globalTheme = JSON.parse(this.context.settings.value.theme)
+											const profileTheme = profile.terminalOptions.theme || {}
+											return { ...globalTheme, ...profileTheme }
+										} catch (error) {
+											self.console.warn("Invalid theme JSON:", error)
+											return profile.terminalOptions.theme || {}
+										}
+									})(),
 							},
 							{
 								disposer: new DisposerAddon(

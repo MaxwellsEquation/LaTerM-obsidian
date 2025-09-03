@@ -9,6 +9,7 @@ import {
 	resetButton,
 	setTextToEnum,
 } from "@polyipseity/obsidian-plugin-library"
+import { Notice } from "obsidian"
 import { ProfileListModal } from "./modals.js"
 import { Settings } from "./settings-data.js"
 import type { TerminalPlugin } from "./main.js"
@@ -354,9 +355,81 @@ export class SettingTab extends AdvancedSettingTab<Settings> {
 						"📝",
 						i18n.t("settings.reset"),
 						async () => settings.mutate(settingsM => {
-							settingsM.enablePtyLogging =
-								Settings.DEFAULT.enablePtyLogging
+							settingsM.enableTerminalWriteLogging =
+								Settings.DEFAULT.enableTerminalWriteLogging
 						}),
+						() => { this.postMutate() },
+					))
+			})
+		this.newSectionWidget(() => "Theme")
+		ui
+			.newSetting(containerEl, setting => {
+				let textAreaElement: HTMLTextAreaElement;
+				setting
+					.setName("Terminal Theme")
+					.setDesc("JSON configuration for terminal theme colors (Xterm ITheme format). Use preset buttons or paste your own theme.")
+					.addTextArea(textArea => {
+						textAreaElement = textArea.inputEl;
+						textArea
+							.setPlaceholder("{}")
+							.setValue(settings.value.theme)
+							.onChange(async value => {
+								await settings.mutate(settingsM => {
+									settingsM.theme = value
+								})
+								this.postMutate()
+							})
+					})
+					.addButton(button => button
+						.setButtonText("Light Theme")
+						.setTooltip("Apply light theme preset")
+						.onClick(async () => {
+							const lightTheme = JSON.stringify({
+								"background": "#ffffff",
+								"foreground": "#000000"
+							}, null, 2);
+							textAreaElement.value = lightTheme;
+							await settings.mutate(settingsM => {
+								settingsM.theme = lightTheme
+							});
+							this.postMutate();
+						}))
+					.addButton(button => button
+						.setButtonText("Dark Theme")
+						.setTooltip("Apply dark theme preset")
+						.onClick(async () => {
+							const darkTheme = JSON.stringify({
+								"background": "#000000",
+								"foreground": "#ffffff"
+							}, null, 2);
+							textAreaElement.value = darkTheme;
+							await settings.mutate(settingsM => {
+								settingsM.theme = darkTheme
+							});
+							this.postMutate();
+						}))
+					.addButton(button => button
+						.setButtonText("Load Theme")
+						.setTooltip("Apply current theme to all terminals")
+						.onClick(async () => {
+							try {
+								JSON.parse(settings.value.theme)
+								new Notice("Theme loaded successfully. Restart terminals to see changes.")
+							} catch (error) {
+								const errorMessage = error instanceof Error ? error.message : String(error)
+								new Notice(`Invalid theme JSON: ${errorMessage}`)
+							}
+						}))
+					.addExtraButton(resetButton(
+						"🎨",
+						"Reset to default (empty theme)",
+						async () => {
+							const defaultTheme = Settings.DEFAULT.theme;
+							textAreaElement.value = defaultTheme;
+							settings.mutate(settingsM => {
+								settingsM.theme = defaultTheme
+							});
+						},
 						() => { this.postMutate() },
 					))
 			})
