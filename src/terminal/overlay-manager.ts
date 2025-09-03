@@ -322,8 +322,8 @@ export class OverlayManager {
 			overlay.style.left = `${x}px`
 			overlay.style.top = `${y}px`
 			
-			// If LaTeX is smaller than minimum width, use full width and center content
-			if (actualContentWidth < minWidth) {
+			// If LaTeX content is smaller than minimum width, use minimum width and center content
+			if (finalWidth === minWidth) {
 				overlay.style.width = `${minWidth}px`
 				overlay.style.textAlign = 'center'  // Center the LaTeX within the box
 				overlay.style.display = 'flex'
