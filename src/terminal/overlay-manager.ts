@@ -290,6 +290,10 @@ export class OverlayManager {
 		// Render LaTeX content (cached)
 		overlay.innerHTML = this.renderLatex(entry)
 		
+		// Measure actual rendered content width before setting final width
+		overlay.style.width = 'auto'  // Let content determine width
+		const actualContentWidth = overlay.offsetWidth
+		
 		// Calculate pixel position
 		const cellDims = this.getCellDimensions()
 		const x = col * cellDims.width
@@ -298,10 +302,10 @@ export class OverlayManager {
 		// Check if this is a display equation
 		const isDisplayEquation = entry.isDisplayEquation === true
 		
-		// Calculate zoom-adjusted width using pixel measurements
-		const zoomRatio = cellDims.width / entry.originalCellWidth
-		const scaledPixelWidth = entry.pixelWidth * zoomRatio
-		const adjustedWidth = `${scaledPixelWidth}px`
+		// Calculate zoom-adjusted width using actual content measurement
+		const minWidth = 7 * cellDims.width
+		const finalWidth = Math.max(actualContentWidth, minWidth)
+		const adjustedWidth = `${finalWidth}px`
 		
 		// Update position and size (cell dimensions may have changed on zoom)
 		if (isDisplayEquation) {
@@ -319,7 +323,7 @@ export class OverlayManager {
 			overlay.style.top = `${y}px`
 			
 			// If LaTeX is smaller than minimum width, use full width and center content
-			if (scaledPixelWidth < minWidth) {
+			if (actualContentWidth < minWidth) {
 				overlay.style.width = `${minWidth}px`
 				overlay.style.textAlign = 'center'  // Center the LaTeX within the box
 				overlay.style.display = 'flex'
