@@ -10,6 +10,7 @@ export interface LatexEntry {
 	pixelWidth: number      // Exact pixel width at measurement time
 	originalCellWidth: number  // Cell width when measured (for zoom calculations)
 	originalCellHeight: number // Cell height when measured (for zoom calculations)
+	isDisplayEquation?: boolean // True for $$...$$ expressions that should be centered
 	renderedHTML?: string   // Cached KaTeX/MathJax rendered HTML
 	renderError?: string    // Error if rendering failed
 }

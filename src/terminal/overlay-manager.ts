@@ -120,7 +120,7 @@ export class OverlayManager {
 			// Render with KaTeX
 			const html = katex.renderToString(entry.latex, {
 				throwOnError: false,
-				displayMode: entry.displayHeight > 1, // Use display mode for tall expressions
+				displayMode: entry.isDisplayEquation === true, // Use display mode for $$...$$ equations
 				output: 'html',
 				trust: false,
 				strict: false
@@ -240,22 +240,49 @@ export class OverlayManager {
 			overlay = document.createElement('div')
 			overlay.className = 'latex-overlay'
 			overlay.dataset['hash'] = hash
+			
+			// Check if this is a display equation that should be centered
+			const isDisplayEquation = entry.isDisplayEquation === true
+			
 			// Get terminal font size to match
 			const cellDims = this.getCellDimensions()
-			overlay.style.cssText = `
-				position: absolute;
-				pointer-events: none;
-				background: ${colors.background};
-				color: ${colors.foreground};
-				font-size: ${cellDims.height * 0.7}px;
-				line-height: 1;
-				min-width: ${7 * cellDims.width}px;
-				white-space: nowrap;
-				padding: 0;
-				margin: 0;
-				box-sizing: border-box;
-				display: inline-block;
-			`
+			
+			if (isDisplayEquation) {
+				// CSS-centered display equation
+				overlay.style.cssText = `
+					position: absolute;
+					pointer-events: none;
+					background: ${colors.background};
+					color: ${colors.foreground};
+					font-size: ${cellDims.height * 0.7}px;
+					line-height: 1;
+					white-space: nowrap;
+					padding: 0;
+					margin: 0;
+					box-sizing: border-box;
+					display: flex;
+					justify-content: center;
+					align-items: center;
+					width: 100%;
+					left: 0 !important;
+				`
+			} else {
+				// Regular inline equation positioning
+				overlay.style.cssText = `
+					position: absolute;
+					pointer-events: none;
+					background: ${colors.background};
+					color: ${colors.foreground};
+					font-size: ${cellDims.height * 0.7}px;
+					line-height: 1;
+					min-width: ${7 * cellDims.width}px;
+					white-space: nowrap;
+					padding: 0;
+					margin: 0;
+					box-sizing: border-box;
+					display: inline-block;
+				`
+			}
 			this.overlayContainer.appendChild(overlay)
 			this.overlays.set(hash, overlay)
 		}
@@ -268,21 +295,34 @@ export class OverlayManager {
 		const x = col * cellDims.width
 		const y = row * cellDims.height
 		
+		// Check if this is a display equation
+		const isDisplayEquation = entry.isDisplayEquation === true
+		
 		// Calculate zoom-adjusted width using pixel measurements
 		const zoomRatio = cellDims.width / entry.originalCellWidth
 		const scaledPixelWidth = entry.pixelWidth * zoomRatio
 		const adjustedWidth = `${scaledPixelWidth}px`
 		
 		// Update position and size (cell dimensions may have changed on zoom)
-		overlay.style.left = `${x}px`
-		overlay.style.top = `${y}px`
+		if (isDisplayEquation) {
+			// For centered display equations, position across the full terminal width
+			overlay.style.left = '0px'  // Always full width
+			overlay.style.top = `${y}px`
+			overlay.style.width = '100%'  // Full terminal width
+			overlay.style.height = `${cellDims.height}px`
+		} else {
+			// Regular inline positioning
+			overlay.style.left = `${x}px`
+			overlay.style.top = `${y}px`
+			overlay.style.width = adjustedWidth
+			overlay.style.minWidth = `${7 * cellDims.width}px`
+			overlay.style.verticalAlign = 'middle'
+		}
+		
+		// Common style updates
 		overlay.style.fontSize = `${cellDims.height * 0.7}px`
-		// Ensure consistent vertical alignment
 		overlay.style.lineHeight = `${cellDims.height}px`
-		overlay.style.verticalAlign = 'middle'
-		overlay.style.minWidth = `${7 * cellDims.width}px`
-		// Use zoom-adjusted width for proper scaling
-		overlay.style.width = adjustedWidth
+		
 		// Update colors in case terminal theme changed
 		const currentColors = this.getTerminalColors()
 		overlay.style.background = currentColors.background
@@ -299,9 +339,11 @@ export class OverlayManager {
 			}, 10)
 		}
 		
-		// Set max width to prevent overflow
-		const maxWidth = (this.terminal.cols - col) * cellDims.width
-		overlay.style.maxWidth = `${maxWidth}px`
+		// Set max width to prevent overflow (only for inline equations)
+		if (!isDisplayEquation) {
+			const maxWidth = (this.terminal.cols - col) * cellDims.width
+			overlay.style.maxWidth = `${maxWidth}px`
+		}
 		
 		// Mark as active (for cleanup)
 		overlay.dataset['active'] = 'true'

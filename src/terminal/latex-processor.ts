@@ -180,7 +180,7 @@ export class LatexProcessor {
 			const cellWidth = cellDims.width
 			const cellHeight = cellDims.height
 			
-			// Store in hashmap with rendered HTML
+			// Store in hashmap with rendered HTML - mark as display equation
 			const entry: LatexEntry = {
 				latex: latex,
 				displayWidth: width,
@@ -188,6 +188,7 @@ export class LatexProcessor {
 				pixelWidth: pixelWidth,
 				originalCellWidth: cellWidth,
 				originalCellHeight: cellHeight,
+				isDisplayEquation: true,  // Mark as display equation for centering
 				...(error ? { renderError: error } : { renderedHTML: html })
 			}
 			this.latexMap.set(hash, entry)
@@ -204,7 +205,8 @@ export class LatexProcessor {
 				this.log(`    Placeholder: "${placeholder}"`)
 			}
 			
-			return placeholder
+			// Add newlines above and below for display equations
+			return `\n${placeholder}\n`
 		})
 		
 		// Then process inline LaTeX: $...$
