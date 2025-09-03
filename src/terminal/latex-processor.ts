@@ -88,16 +88,34 @@ export class LatexProcessor {
 			
 			// Measure and calculate terminal cells needed
 			const pixelWidth = measurer.offsetWidth
-			// Get actual cell width from terminal
-			const cellWidth = renderer.dimensions.actualCellWidth
+			// Calculate cell width the same way as overlay manager for consistency
+			const termElement = this.terminal.element
+			if (!termElement) {
+				console.error('[LaTerM] Terminal element not available')
+				return { html, width: 7, pixelWidth, error: 'Terminal element not found' }
+			}
+			
+			const viewport = termElement.querySelector('.xterm-viewport') as HTMLElement
+			const screen = termElement.querySelector('.xterm-screen') as HTMLElement
+			const element = screen || viewport || termElement
+			const cellWidth = element.clientWidth / this.terminal.cols
+			
+			console.log(`[LaTerM DEBUG] Measurement: pixelWidth=${pixelWidth}, cellWidth=${cellWidth}, cols=${this.terminal.cols}`)
+			
+			if (!cellWidth || cellWidth <= 0) {
+				console.error(`[LaTerM] Invalid cellWidth calculation: ${cellWidth}`)
+				return { html, width: 7, pixelWidth, error: 'Invalid cell width' }
+			}
+			
 			// Calculate cells needed without extra padding
-			const cells = Math.ceil(pixelWidth / cellWidth)
+			const division = pixelWidth / cellWidth
+			const cells = Math.ceil(division)
+			const finalWidth = Math.max(cells, 7)
+			
+			console.log(`[LaTerM DEBUG] Width calc: ${pixelWidth}/${cellWidth} = ${division}, ceil = ${cells}, final = ${finalWidth}`)
 			
 			// Clean up
 			document.body.removeChild(measurer)
-			
-			// Ensure minimum width of 7 cells for hash marker
-			const finalWidth = Math.max(cells, 7)
 			
 			return { html, width: finalWidth, pixelWidth }
 		} catch (error) {
@@ -212,66 +230,83 @@ export class LatexProcessor {
 		// Then process inline LaTeX: $...$
 		// Smart filtering: small expressions (<5 chars) OR larger ones (<30 chars) with math operators
 		result = result.replace(/\$([^$]+?)\$/g, (match, latex) => {
-			// Remove newlines that are likely from terminal wrapping
-			const cleanLatex = latex.replace(/\n\s*/g, '').trim()
-			
-			// Check if expression meets criteria for LaTeX processing
-			const isSmall = cleanLatex.length < 7
-			const isMathExpression = cleanLatex.length < 150 && (/[+=><^\\]/.test(cleanLatex))
-			
-			if (!isSmall && !isMathExpression) {
-				// Not a valid LaTeX candidate, return unchanged
-				if (this.loggingEnabled) {
-					this.log(`  [Inline LaTeX Skipped] "${cleanLatex}" - doesn't meet criteria`)
+			try {
+				// Debug: Log every regex match
+				console.log(`[LaTerM DEBUG] Processing regex match: "${match}" with latex: "${latex}"`)
+				
+				// Remove newlines that are likely from terminal wrapping
+				const cleanLatex = latex.replace(/\n\s*/g, '').trim()
+				
+				// Check if expression meets criteria for LaTeX processing
+				const isSmall = cleanLatex.length < 7
+				const isMathExpression = cleanLatex.length < 150 && (/[+=><^\\]/.test(cleanLatex))
+				
+				console.log(`[LaTerM DEBUG] Filter check: isSmall=${isSmall}, isMathExpression=${isMathExpression}`)
+				
+				if (!isSmall && !isMathExpression) {
+					// Not a valid LaTeX candidate, return unchanged
+					console.log(`[LaTerM DEBUG] Returning unchanged: "${match}"`)
+					if (this.loggingEnabled) {
+						this.log(`  [Inline LaTeX Skipped] "${cleanLatex}" - doesn't meet criteria`)
+					}
+					return match  // Return original $...$
 				}
-				return match  // Return original $...$
-			}
-			
-			// Try to render to validate it's actually LaTeX
-			const testRender = this.renderAndMeasure(cleanLatex, false)
-			if (testRender.error) {
-				// Rendering failed, treat as false positive
-				if (this.loggingEnabled) {
-					this.log(`  [Inline LaTeX False Positive] "${cleanLatex}" - render failed: ${testRender.error}`)
+				
+				// Try to render to validate it's actually LaTeX
+				console.log(`[LaTerM DEBUG] Testing render for: "${cleanLatex}"`)
+				const testRender = this.renderAndMeasure(cleanLatex, false)
+				if (testRender.error) {
+					// Rendering failed, treat as false positive
+					console.log(`[LaTerM DEBUG] Render failed, returning unchanged: "${match}"`)
+					if (this.loggingEnabled) {
+						this.log(`  [Inline LaTeX False Positive] "${cleanLatex}" - render failed: ${testRender.error}`)
+					}
+					return match  // Return original $...$
 				}
-				return match  // Return original $...$
+				
+				console.log(`[LaTerM DEBUG] Render successful, proceeding with replacement`)
+				replacementCount++
+				
+				// Generate hash
+				const hash = this.latexMap.generateHash(cleanLatex)
+				
+				// Get current cell dimensions using public API
+				const cellDims = this.getCellDimensions()
+				const cellWidth = cellDims.width
+				const cellHeight = cellDims.height
+				
+				// Store in hashmap with rendered HTML
+				const entry: LatexEntry = {
+					latex: cleanLatex,
+					displayWidth: testRender.width,
+					displayHeight: 1,
+					pixelWidth: testRender.pixelWidth,
+					originalCellWidth: cellWidth,
+					originalCellHeight: cellHeight,
+					renderedHTML: testRender.html
+				}
+				this.latexMap.set(hash, entry)
+				
+				// Create placeholder with measured width
+				const placeholder = this.latexMap.formatPlaceholder(hash, testRender.width)
+				
+				// Debug: Force log this critical step
+				console.log(`[LaTerM DEBUG] About to return placeholder for "${cleanLatex}": "${placeholder}"`)
+				
+				// Log the replacement
+				if (this.loggingEnabled) {
+					this.log(`  [Inline LaTeX Found #${replacementCount}]`)
+					this.log(`    Expression: ${cleanLatex}`)
+					this.log(`    Hash: ${hash}`)
+					this.log(`    Measured width: ${testRender.width} cells`)
+					this.log(`    Placeholder: "${placeholder}"`)
+				}
+				
+				return placeholder
+			} catch (error) {
+				console.error(`[LaTerM ERROR] Exception in regex callback:`, error)
+				return match  // Return original on error
 			}
-			
-			replacementCount++
-			
-			// Generate hash
-			const hash = this.latexMap.generateHash(cleanLatex)
-			
-			// Get current cell dimensions using public API
-			const cellDims = this.getCellDimensions()
-			const cellWidth = cellDims.width
-			const cellHeight = cellDims.height
-			
-			// Store in hashmap with rendered HTML
-			const entry: LatexEntry = {
-				latex: cleanLatex,
-				displayWidth: testRender.width,
-				displayHeight: 1,
-				pixelWidth: testRender.pixelWidth,
-				originalCellWidth: cellWidth,
-				originalCellHeight: cellHeight,
-				renderedHTML: testRender.html
-			}
-			this.latexMap.set(hash, entry)
-			
-			// Create placeholder with measured width
-			const placeholder = this.latexMap.formatPlaceholder(hash, testRender.width)
-			
-			// Log the replacement
-			if (this.loggingEnabled) {
-				this.log(`  [Inline LaTeX Found #${replacementCount}]`)
-				this.log(`    Expression: ${cleanLatex}`)
-				this.log(`    Hash: ${hash}`)
-				this.log(`    Measured width: ${testRender.width} cells`)
-				this.log(`    Placeholder: "${placeholder}"`)
-			}
-			
-			return placeholder
 		})
 		
 		// Check for incomplete LaTeX at the end

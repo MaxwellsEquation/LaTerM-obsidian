@@ -49,8 +49,14 @@ export class LatexHashMap {
 		const marker = `««${hash}»`
 		// Minimum width is the marker itself (7 chars)
 		const actualWidth = Math.max(width, marker.length)
-		const spaces = ' '.repeat(actualWidth - marker.length)
-		return marker + spaces
+		// Use non-breaking spaces (U+00A0) - won't be stripped by terminal and have actual width
+		const padding = '\u00A0'.repeat(actualWidth - marker.length)
+		const result = marker + padding
+		
+		// Debug logging
+		console.log(`[LaTerM DEBUG] formatPlaceholder: hash=${hash}, width=${width}, actualWidth=${actualWidth}, padding=${padding.length} non-breaking spaces`)
+		
+		return result
 	}
 	
 	/**
