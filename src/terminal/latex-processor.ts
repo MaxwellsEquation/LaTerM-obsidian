@@ -287,8 +287,11 @@ export class LatexProcessor {
 				}
 				this.latexMap.set(hash, entry)
 				
-				// Create placeholder with measured width
-				const placeholder = this.latexMap.formatPlaceholder(hash, testRender.width)
+				// Create placeholder with actual content width to properly space following text
+				// Use floor to be more conservative with spacing
+				const contentCells = Math.floor(testRender.pixelWidth / cellWidth)
+				const placeholderWidth = Math.max(contentCells, 7)
+				const placeholder = this.latexMap.formatPlaceholder(hash, placeholderWidth)
 				
 				// Debug: Force log this critical step
 				console.log(`[LaTerM DEBUG] About to return placeholder for "${cleanLatex}": "${placeholder}"`)
