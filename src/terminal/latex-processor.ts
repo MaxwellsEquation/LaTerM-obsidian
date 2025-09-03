@@ -210,19 +210,37 @@ export class LatexProcessor {
 		})
 		
 		// Then process inline LaTeX: $...$
-		// Must have at least one backslash to be considered LaTeX
-		// Allow newlines for terminal wrapping, but clean them up
-		result = result.replace(/\$([^$]*\\[^$]+?)\$/g, (_, latex) => {
+		// Smart filtering: small expressions (<5 chars) OR larger ones (<30 chars) with math operators
+		result = result.replace(/\$([^$]+?)\$/g, (match, latex) => {
 			// Remove newlines that are likely from terminal wrapping
-			// Keep the content but remove line breaks
-			latex = latex.replace(/\n\s*/g, '')
+			const cleanLatex = latex.replace(/\n\s*/g, '').trim()
+			
+			// Check if expression meets criteria for LaTeX processing
+			const isSmall = cleanLatex.length < 7
+			const isMathExpression = cleanLatex.length < 150 && (/[+=><^\\]/.test(cleanLatex))
+			
+			if (!isSmall && !isMathExpression) {
+				// Not a valid LaTeX candidate, return unchanged
+				if (this.loggingEnabled) {
+					this.log(`  [Inline LaTeX Skipped] "${cleanLatex}" - doesn't meet criteria`)
+				}
+				return match  // Return original $...$
+			}
+			
+			// Try to render to validate it's actually LaTeX
+			const testRender = this.renderAndMeasure(cleanLatex, false)
+			if (testRender.error) {
+				// Rendering failed, treat as false positive
+				if (this.loggingEnabled) {
+					this.log(`  [Inline LaTeX False Positive] "${cleanLatex}" - render failed: ${testRender.error}`)
+				}
+				return match  // Return original $...$
+			}
+			
 			replacementCount++
 			
 			// Generate hash
-			const hash = this.latexMap.generateHash(latex)
-			
-			// Render and measure IMMEDIATELY
-			const { html, width, pixelWidth, error } = this.renderAndMeasure(latex, false)
+			const hash = this.latexMap.generateHash(cleanLatex)
 			
 			// Get current cell dimensions using public API
 			const cellDims = this.getCellDimensions()
@@ -231,25 +249,25 @@ export class LatexProcessor {
 			
 			// Store in hashmap with rendered HTML
 			const entry: LatexEntry = {
-				latex: latex,
-				displayWidth: width,
+				latex: cleanLatex,
+				displayWidth: testRender.width,
 				displayHeight: 1,
-				pixelWidth: pixelWidth,
+				pixelWidth: testRender.pixelWidth,
 				originalCellWidth: cellWidth,
 				originalCellHeight: cellHeight,
-				...(error ? { renderError: error } : { renderedHTML: html })
+				renderedHTML: testRender.html
 			}
 			this.latexMap.set(hash, entry)
 			
 			// Create placeholder with measured width
-			const placeholder = this.latexMap.formatPlaceholder(hash, width)
+			const placeholder = this.latexMap.formatPlaceholder(hash, testRender.width)
 			
 			// Log the replacement
 			if (this.loggingEnabled) {
 				this.log(`  [Inline LaTeX Found #${replacementCount}]`)
-				this.log(`    Expression: ${latex}`)
+				this.log(`    Expression: ${cleanLatex}`)
 				this.log(`    Hash: ${hash}`)
-				this.log(`    Measured width: ${width} cells`)
+				this.log(`    Measured width: ${testRender.width} cells`)
 				this.log(`    Placeholder: "${placeholder}"`)
 			}
 			
