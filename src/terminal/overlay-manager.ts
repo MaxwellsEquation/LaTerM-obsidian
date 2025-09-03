@@ -38,13 +38,15 @@ export class OverlayManager {
 		styleElement.textContent = `
 			.latex-overlay-container .katex {
 				margin: 0 !important;
+			}
+			.latex-overlay-container .katex:not(.katex-display) {
 				vertical-align: baseline !important;
 			}
 			.latex-overlay-container .katex-display {
 				margin: 0 !important;
 				padding: 0 !important;
 			}
-			.latex-overlay-container .katex .base {
+			.latex-overlay-container .katex:not(.katex-display) .base {
 				vertical-align: baseline !important;
 			}
 			.latex-overlay-container .katex-html {
@@ -248,21 +250,19 @@ export class OverlayManager {
 			const cellDims = this.getCellDimensions()
 			
 			if (isDisplayEquation) {
-				// CSS-centered display equation
+				// CSS-centered display equation - use text-align instead of flex to preserve KaTeX table layout
 				overlay.style.cssText = `
 					position: absolute;
 					pointer-events: none;
 					background: ${colors.background};
 					color: ${colors.foreground};
 					font-size: ${cellDims.height * 0.7}px;
-					line-height: 1;
-					white-space: nowrap;
+					line-height: normal;
+					white-space: normal;
 					padding: 0;
 					margin: 0;
 					box-sizing: border-box;
-					display: flex;
-					justify-content: center;
-					align-items: center;
+					text-align: center;
 					width: 100%;
 					left: 0 !important;
 				`
@@ -343,7 +343,10 @@ export class OverlayManager {
 		
 		// Common style updates
 		overlay.style.fontSize = `${cellDims.height * 0.7}px`
-		overlay.style.lineHeight = `${cellDims.height}px`
+		// Only constrain line-height for inline equations, let display equations use natural height
+		if (!isDisplayEquation) {
+			overlay.style.lineHeight = `${cellDims.height}px`
+		}
 		
 		// Update colors in case terminal theme changed
 		const currentColors = this.getTerminalColors()
