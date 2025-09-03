@@ -109,7 +109,7 @@ export class LatexProcessor {
 			
 			// Calculate cells needed without extra padding
 			const division = pixelWidth / cellWidth
-			const cells = Math.ceil(division)
+			const cells = Math.round(division)
 			const finalWidth = Math.max(cells, 7)
 			
 			console.log(`[LaTerM DEBUG] Width calc: ${pixelWidth}/${cellWidth} = ${division}, ceil = ${cells}, final = ${finalWidth}`)
