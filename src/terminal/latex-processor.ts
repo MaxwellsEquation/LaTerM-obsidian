@@ -288,8 +288,21 @@ export class LatexProcessor {
 				this.latexMap.set(hash, entry)
 				
 				// Create placeholder with actual content width to properly space following text
-				// Use floor to be more conservative with spacing
-				const contentCells = Math.floor(testRender.pixelWidth / cellWidth)
+				// Use same measurement context as overlay for accuracy
+				const renderer = (this.terminal as any)._core._renderService
+				const terminalFontSize = renderer.dimensions.actualCellHeight * 0.7
+				
+				const tempMeasurement = document.createElement('div')
+				tempMeasurement.innerHTML = testRender.html
+				tempMeasurement.style.visibility = 'hidden'
+				tempMeasurement.style.position = 'absolute'
+				tempMeasurement.style.fontSize = `${terminalFontSize}px`
+				tempMeasurement.style.fontFamily = 'monospace'
+				document.body.appendChild(tempMeasurement)
+				const accuratePixelWidth = tempMeasurement.offsetWidth
+				document.body.removeChild(tempMeasurement)
+				
+				const contentCells = Math.floor(accuratePixelWidth / cellWidth)
 				const placeholderWidth = Math.max(contentCells, 7)
 				const placeholder = this.latexMap.formatPlaceholder(hash, placeholderWidth)
 				
