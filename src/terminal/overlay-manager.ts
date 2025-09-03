@@ -312,10 +312,28 @@ export class OverlayManager {
 			overlay.style.height = `${cellDims.height}px`
 		} else {
 			// Regular inline positioning
+			const minWidth = 7 * cellDims.width
+			
+			// Always position overlay at the placeholder location
 			overlay.style.left = `${x}px`
 			overlay.style.top = `${y}px`
-			overlay.style.width = adjustedWidth
-			overlay.style.minWidth = `${7 * cellDims.width}px`
+			
+			// If LaTeX is smaller than minimum width, use full width and center content
+			if (scaledPixelWidth < minWidth) {
+				overlay.style.width = `${minWidth}px`
+				overlay.style.textAlign = 'center'  // Center the LaTeX within the box
+				overlay.style.display = 'flex'
+				overlay.style.justifyContent = 'center'
+				overlay.style.alignItems = 'center'
+			} else {
+				overlay.style.width = adjustedWidth
+				overlay.style.textAlign = 'left'  // Reset to default
+				overlay.style.display = 'inline-block'
+				overlay.style.justifyContent = 'unset'
+				overlay.style.alignItems = 'unset'
+			}
+			
+			overlay.style.minWidth = `${minWidth}px`
 			overlay.style.verticalAlign = 'middle'
 		}
 		
