@@ -275,7 +275,7 @@ export class OverlayManager {
 					color: ${colors.foreground};
 					font-size: ${cellDims.height * 0.7}px;
 					line-height: 1;
-					min-width: ${7 * cellDims.width}px;
+					min-width: ${4 * cellDims.width}px;
 					white-space: nowrap;
 					padding: 0;
 					margin: 0;
@@ -303,7 +303,7 @@ export class OverlayManager {
 		const isDisplayEquation = entry.isDisplayEquation === true
 		
 		// Calculate zoom-adjusted width using actual content measurement
-		const minWidth = 7 * cellDims.width
+		const minWidth = 4 * cellDims.width
 		const finalWidth = Math.max(actualContentWidth, minWidth)
 		const adjustedWidth = `${finalWidth}px`
 		
@@ -316,7 +316,7 @@ export class OverlayManager {
 			overlay.style.height = `${cellDims.height}px`
 		} else {
 			// Regular inline positioning
-			const minWidth = 7 * cellDims.width
+			const minWidth = 4 * cellDims.width
 			
 			// Always position overlay at the placeholder location
 			overlay.style.left = `${x}px`
@@ -397,8 +397,8 @@ export class OverlayManager {
 			
 			const text = line.translateToString()
 			
-			// Find all ««XXXX» patterns in this line
-			const hashRegex = /««([a-f0-9]{4})»/g
+			// Find all \uE000XXX patterns in this line
+			const hashRegex = /\uE000([0-9A-Za-z]{3})/g
 			let match
 			
 			while ((match = hashRegex.exec(text)) !== null) {

@@ -22,10 +22,12 @@ export class LatexHashMap {
 	private maxSize: number = 5000
 	
 	/**
-	 * Generate a unique 4-character hash for a LaTeX expression
-	 * Format: [a-f0-9]{4}
+	 * Generate a unique 3-character base62 hash for a LaTeX expression
+	 * Format: [0-9A-Za-z]{3}
 	 */
 	generateHash(latex: string): string {
+		const base62chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+		
 		// Deterministic hash - same LaTeX always gets same hash
 		let hash = 0
 		for (let i = 0; i < latex.length; i++) {
@@ -34,20 +36,37 @@ export class LatexHashMap {
 			hash = hash & hash // Convert to 32-bit integer
 		}
 		
-		// Convert to hex and take first 4 chars
-		// No counter - purely based on content
-		const uniqueHash = Math.abs(hash).toString(16).substring(0, 4).padStart(4, '0')
+		// Convert to base62
+		let result = ''
+		let num = Math.abs(hash)
+		for (let i = 0; i < 3; i++) {
+			result = base62chars[num % 62] + result
+			num = Math.floor(num / 62)
+		}
 		
-		return uniqueHash
+		// Basic collision prevention - if hash exists and has different LaTeX, increment
+		let finalHash = result
+		let attempts = 0
+		while (attempts < 100 && this.has(finalHash) && this.get(finalHash)?.latex !== latex) {
+			num = (Math.abs(hash) + attempts + 1) % (62 * 62 * 62)
+			finalHash = ''
+			for (let i = 0; i < 3; i++) {
+				finalHash = base62chars[num % 62] + finalHash
+				num = Math.floor(num / 62)
+			}
+			attempts++
+		}
+		
+		return finalHash
 	}
 	
 	/**
-	 * Format a placeholder with «« » brackets and spacing
-	 * Example: ««a7b3»    (with spaces to fill width)
+	 * Format a placeholder with U+E000 and 3-char base62 hash
+	 * Example: \uE000Abc    (with spaces to fill width)
 	 */
 	formatPlaceholder(hash: string, width: number): string {
-		const marker = `««${hash}»`
-		// Minimum width is the marker itself (7 chars)
+		const marker = `\uE000${hash}`  // U+E000 + 3 base62 chars = 4 chars total
+		// Minimum width is the marker itself (4 chars)
 		const actualWidth = Math.max(width, marker.length)
 		// Use non-breaking spaces (U+00A0) - won't be stripped by terminal and have actual width
 		const padding = '\u00A0'.repeat(actualWidth - marker.length)
@@ -64,9 +83,9 @@ export class LatexHashMap {
 	 * Returns null if not a valid marker
 	 */
 	extractHash(text: string, position: number): string | null {
-		// Look for ««[hash]» pattern at position
-		const markerRegex = /««([a-f0-9]{4})»/
-		const substring = text.substring(position, position + 7) // ««1234»
+		// Look for \uE000[hash] pattern at position
+		const markerRegex = /\uE000([0-9A-Za-z]{3})/
+		const substring = text.substring(position, position + 4) // \uE000ABC
 		const match = substring.match(markerRegex)
 		return match?.[1] ?? null
 	}
@@ -118,7 +137,7 @@ export class LatexHashMap {
 	 */
 	findHashMarkers(text: string): Array<{hash: string, column: number, width: number}> {
 		const markers: Array<{hash: string, column: number, width: number}> = []
-		const regex = /««([a-f0-9]{4})»(\s*)/g
+		const regex = /\uE000([0-9A-Za-z]{3})(\s*)/g
 		let match
 		
 		while ((match = regex.exec(text)) !== null) {
@@ -138,45 +157,6 @@ export class LatexHashMap {
 	}
 	
 	
-	/**
-	 * Calculate display dimensions for a LaTeX expression
-	 * Returns both width and height estimates
-	 */
-	static calculateDisplayDimensions(latex: string): { width: number, height: number } {
-		// Base width estimate
-		let width = Math.ceil(latex.length * 0.6)
-		let height = 1  // Default to single line height
-		
-		// Adjust for common patterns
-		if (latex.includes('\\frac')) {
-			width = Math.max(width, 8)
-			height = 1  // Keep fractions at 1 line for now
-		}
-		if (latex.includes('\\int') || latex.includes('\\sum')) {
-			width = Math.max(width, 6)
-			height = 1  // Integrals/sums kept at 1 line
-		}
-		if (latex.includes('_{') || latex.includes('^{')) {
-			width += 2
-		}
-		
-		// Multi-line structures (matrices, cases, etc.)
-		if (latex.includes('\\begin{') && latex.includes('matrix')) {
-			// Count rows in matrix (rough estimate)
-			const rows = (latex.match(/\\\\/g) || []).length + 1
-			height = 1  // Still cap at 1 for now to avoid overlapping
-			width = Math.max(width, 10 * Math.ceil(rows / 2))
-		}
-		
-		// Minimum width for ««1234» marker (7 chars)
-		width = Math.max(width, 7)
-		
-		// Cap at reasonable maximum
-		width = Math.min(width, 50)
-		height = Math.min(height, 1)  // Force single line for v1
-		
-		return { width, height }
-	}
 	
 	/**
 	 * Debug: Get statistics about the map

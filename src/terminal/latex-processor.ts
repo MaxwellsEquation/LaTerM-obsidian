@@ -93,7 +93,7 @@ export class LatexProcessor {
 			const termElement = this.terminal.element
 			if (!termElement) {
 				console.error('[LaTerM] Terminal element not available')
-				return { html, width: 7, pixelWidth, error: 'Terminal element not found' }
+				return { html, width: 4, pixelWidth, error: 'Terminal element not found' }
 			}
 			
 			const viewport = termElement.querySelector('.xterm-viewport') as HTMLElement
@@ -106,13 +106,13 @@ export class LatexProcessor {
 			
 			if (!cellWidth || cellWidth <= 0) {
 				console.error(`[LaTerM] Invalid cellWidth calculation: ${cellWidth}`)
-				return { html, width: 7, pixelWidth, error: 'Invalid cell width' }
+				return { html, width: 4, pixelWidth, error: 'Invalid cell width' }
 			}
 			
 			// Calculate cells needed without extra padding
 			const widthDivision = pixelWidth / cellWidth
 			const widthCells = Math.round(widthDivision)
-			const finalWidth = Math.max(widthCells, 7)
+			const finalWidth = Math.max(widthCells, 4)
 			
 			// Calculate height in terminal lines
 			const heightDivision = pixelHeight / cellHeight
@@ -312,7 +312,7 @@ export class LatexProcessor {
 				const contentCells = Math.floor(testRender.pixelWidth / cellWidth)
 				// TODO HACK: Magic adjustment to compensate for cellWidth measurement inaccuracy
 				// Consistently overestimates by 3-4 spaces, so subtract 2 to reduce excess
-				const adjustedCells = Math.max(contentCells - 2, 7)
+				const adjustedCells = Math.max(contentCells - 2, 4)
 				const placeholderWidth = adjustedCells
 				const placeholder = this.latexMap.formatPlaceholder(hash, placeholderWidth)
 				
