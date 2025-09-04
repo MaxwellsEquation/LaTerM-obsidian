@@ -54,7 +54,7 @@ export class LatexProcessor {
 	/**
 	 * Render LaTeX and measure its width in terminal cells
 	 */
-	private renderAndMeasure(latex: string, isDisplay: boolean = false): { html: string, width: number, pixelWidth: number, error?: string } {
+	private renderAndMeasure(latex: string, isDisplay: boolean = false): { html: string, width: number, pixelWidth: number, height: number, pixelHeight: number, error?: string } {
 		try {
 			// Render with KaTeX
 			const html = katex.renderToString(latex, {
@@ -86,8 +86,9 @@ export class LatexProcessor {
 			measurer.innerHTML = html
 			document.body.appendChild(measurer)
 			
-			// Measure and calculate terminal cells needed
+			// Measure dimensions and calculate terminal cells needed
 			const pixelWidth = measurer.offsetWidth
+			const pixelHeight = measurer.offsetHeight
 			// Calculate cell width the same way as overlay manager for consistency
 			const termElement = this.terminal.element
 			if (!termElement) {
@@ -99,6 +100,7 @@ export class LatexProcessor {
 			const screen = termElement.querySelector('.xterm-screen') as HTMLElement
 			const element = screen || viewport || termElement
 			const cellWidth = element.clientWidth / this.terminal.cols
+			const cellHeight = element.clientHeight / this.terminal.rows
 			
 			console.log(`[LaTerM DEBUG] Measurement: pixelWidth=${pixelWidth}, cellWidth=${cellWidth}, cols=${this.terminal.cols}`)
 			
@@ -108,16 +110,20 @@ export class LatexProcessor {
 			}
 			
 			// Calculate cells needed without extra padding
-			const division = pixelWidth / cellWidth
-			const cells = Math.round(division)
-			const finalWidth = Math.max(cells, 7)
+			const widthDivision = pixelWidth / cellWidth
+			const widthCells = Math.round(widthDivision)
+			const finalWidth = Math.max(widthCells, 7)
 			
-			console.log(`[LaTerM DEBUG] Width calc: ${pixelWidth}/${cellWidth} = ${division}, ceil = ${cells}, final = ${finalWidth}`)
+			// Calculate height in terminal lines
+			const heightDivision = pixelHeight / cellHeight
+			const heightCells = Math.round(heightDivision)
+			const finalHeight = Math.max(heightCells, 1)
+			
 			
 			// Clean up
 			document.body.removeChild(measurer)
 			
-			return { html, width: finalWidth, pixelWidth }
+			return { html, width: finalWidth, pixelWidth, height: finalHeight, pixelHeight }
 		} catch (error) {
 			const errorMsg = error instanceof Error ? error.message : 'Unknown error'
 			console.error(`[LaTerM] KaTeX render error for "${latex}":`, error)
@@ -126,6 +132,8 @@ export class LatexProcessor {
 				html: `<span style="color: red; font-family: monospace;">[LaTeX Error]</span>`,
 				width: 12,
 				pixelWidth: 120, // Approximate for error message
+				height: 1,
+				pixelHeight: 16, // Approximate line height
 				error: errorMsg
 			}
 		}
@@ -193,7 +201,7 @@ export class LatexProcessor {
 			const hash = this.latexMap.generateHash(latex)
 			
 			// Render and measure IMMEDIATELY
-			const { html, width, pixelWidth, error } = this.renderAndMeasure(latex, true)
+			const { html, width, pixelWidth, height, pixelHeight, error } = this.renderAndMeasure(latex, true)
 			
 			// Get current cell dimensions using public API
 			const cellDims = this.getCellDimensions()
@@ -204,7 +212,7 @@ export class LatexProcessor {
 			const entry: LatexEntry = {
 				latex: latex,
 				displayWidth: width,
-				displayHeight: 1,
+				displayHeight: height,
 				pixelWidth: pixelWidth,
 				originalCellWidth: cellWidth,
 				originalCellHeight: cellHeight,
@@ -221,12 +229,21 @@ export class LatexProcessor {
 				this.log(`  [Display LaTeX Found #${replacementCount}]`)
 				this.log(`    Expression: ${latex}`)
 				this.log(`    Hash: ${hash}`)
-				this.log(`    Measured width: ${width} cells`)
+				this.log(`    Measured width: ${width} cells, height: ${height} lines`)
 				this.log(`    Placeholder: "${placeholder}"`)
 			}
 			
 			// Add newlines above and below for display equations
-			return `\n${placeholder}\n`
+			// Scale padding based on height: 1 line = 1 newline, 2+ lines = 2+ newlines  
+			const verticalPadding = Math.max(1, Math.ceil(height / 2))
+			const topPadding = '\n'.repeat(verticalPadding)
+			const bottomPadding = '\n'.repeat(verticalPadding)
+			
+			if (this.loggingEnabled) {
+				this.log(`    Vertical padding: ${verticalPadding} lines above/below`)
+			}
+			
+			return `${topPadding}${placeholder}${bottomPadding}`
 		})
 		
 		// Then process inline LaTeX: $...$
@@ -283,7 +300,7 @@ export class LatexProcessor {
 				const entry: LatexEntry = {
 					latex: cleanLatex,
 					displayWidth: testRender.width,
-					displayHeight: 1,
+					displayHeight: testRender.height || 1,  // Use measured height or fallback to 1
 					pixelWidth: testRender.pixelWidth,
 					originalCellWidth: cellWidth,
 					originalCellHeight: cellHeight,
