@@ -191,8 +191,8 @@ export class LatexProcessor {
 		// Process display LaTeX first: $$...$$
 		// Relaxed requirements - any non-empty content between $$...$$ is treated as LaTeX
 		result = result.replace(/\$\$([^$]+?)\$\$/g, (_, latex) => {
-			// Replace || with \\ for LaTeX row separators (PTY-safe alternative)
-			latex = latex.replace(/\|\|/g, '\\\\')
+			// Replace @nl with \\ for LaTeX row separators (PTY-safe alternative)
+			latex = latex.replace(/@nl/g, '\\\\')
 			// Remove newlines that are likely from terminal wrapping
 			latex = latex.replace(/\n\s*/g, ' ')
 			replacementCount++
@@ -253,8 +253,8 @@ export class LatexProcessor {
 				// Debug: Log every regex match
 				console.log(`[LaTerM DEBUG] Processing regex match: "${match}" with latex: "${latex}"`)
 				
-				// Replace || with \\ for LaTeX row separators (PTY-safe alternative)
-				let cleanLatex = latex.replace(/\|\|/g, '\\\\')
+				// Replace @nl with \\ for LaTeX row separators (PTY-safe alternative)
+				let cleanLatex = latex.replace(/@nl/g, '\\\\')
 				// Remove newlines that are likely from terminal wrapping
 				cleanLatex = cleanLatex.replace(/\n\s*/g, '').trim()
 				
