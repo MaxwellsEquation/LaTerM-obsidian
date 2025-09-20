@@ -892,7 +892,7 @@ class WindowsPseudoterminal implements Pseudoterminal {
 		const shell = await this.shell
 		
 		// Import LaTeRM addon and terminal write logger
-		const { LatexAddon } = await import("xterm-latex")
+		const { LatexAddon } = await import("laterm")
 		const { TerminalWriteLogger } = await import("./terminal-write-logger.js")
 		const { settings } = this.context
 		const vaultPath = (this.context.app.vault.adapter as any).basePath || ""
@@ -1007,7 +1007,7 @@ class UnixPseudoterminal implements Pseudoterminal {
 		const shell = await this.shell
 		
 		// Import LaTeRM addon and terminal write logger
-		const { LatexAddon } = await import("xterm-latex")
+		const { LatexAddon } = await import("laterm")
 		const { TerminalWriteLogger } = await import("./terminal-write-logger.js")
 		const { settings } = this.context
 		const vaultPath = (this.context.app.vault.adapter as any).basePath || ""
