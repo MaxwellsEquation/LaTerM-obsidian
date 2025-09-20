@@ -891,20 +891,23 @@ class WindowsPseudoterminal implements Pseudoterminal {
 		let init = !this.conhost
 		const shell = await this.shell
 		
-		// Import and create LaTeX processor, overlay manager, and terminal write logger
-		const { LatexProcessor } = await import("./latex-processor.js")
-		const { OverlayManager } = await import("./overlay-manager.js")
+		// Import LaTeRM addon and terminal write logger
+		const { LatexAddon } = await import("xterm-latex")
 		const { TerminalWriteLogger } = await import("./terminal-write-logger.js")
 		const { settings } = this.context
 		const vaultPath = (this.context.app.vault.adapter as any).basePath || ""
-		
-		// Create LaTeX processor first (processes LaTeX into placeholders)
-		const latexProcessor = new LatexProcessor(terminal, settings.value.enableTerminalWriteLogging, vaultPath)
-		
-		// Create overlay manager (renders LaTeX overlays)
-		const overlayManager = new OverlayManager(terminal, latexProcessor.getLatexMap())
-		
-		// Create logger second (logs the processed output)
+
+		// Create and load LaTeRM addon
+		const latexConfig: any = {
+			debugLogging: settings.value.enableTerminalWriteLogging
+		}
+		if (settings.value.enableTerminalWriteLogging) {
+			latexConfig.onLog = (msg: string) => console.log(`[LaTeRM] ${msg}`)
+		}
+		const latexAddon = new LatexAddon(latexConfig)
+		terminal.loadAddon(latexAddon)
+
+		// Create logger (logs the processed output)
 		const logger = new TerminalWriteLogger(terminal, settings.value.enableTerminalWriteLogging, vaultPath)
 		
 		const reader = (chunk: Buffer | string): void => {
@@ -923,8 +926,7 @@ class WindowsPseudoterminal implements Pseudoterminal {
 		terminal.loadAddon(new DisposerAddon(
 			() => { shell.stdout.removeListener("data", reader) },
 			() => { shell.stderr.removeListener("data", reader) },
-			() => { overlayManager.dispose() }, // Clean up overlay manager
-			() => { latexProcessor.dispose() }, // Clean up LaTeX processor
+			() => { latexAddon.dispose() }, // Clean up LaTeX addon
 			() => { logger.dispose() }, // Clean up logger
 		))
 		shell.stdout.on("data", reader)
@@ -1002,20 +1004,23 @@ class UnixPseudoterminal implements Pseudoterminal {
 	public async pipe(terminal: Terminal): Promise<void> {
 		const shell = await this.shell
 		
-		// Import and create LaTeX processor, overlay manager, and terminal write logger
-		const { LatexProcessor } = await import("./latex-processor.js")
-		const { OverlayManager } = await import("./overlay-manager.js")
+		// Import LaTeRM addon and terminal write logger
+		const { LatexAddon } = await import("xterm-latex")
 		const { TerminalWriteLogger } = await import("./terminal-write-logger.js")
 		const { settings } = this.context
 		const vaultPath = (this.context.app.vault.adapter as any).basePath || ""
-		
-		// Create LaTeX processor first (processes LaTeX into placeholders)
-		const latexProcessor = new LatexProcessor(terminal, settings.value.enableTerminalWriteLogging, vaultPath)
-		
-		// Create overlay manager (renders LaTeX overlays)
-		const overlayManager = new OverlayManager(terminal, latexProcessor.getLatexMap())
-		
-		// Create logger second (logs the processed output)
+
+		// Create and load LaTeRM addon
+		const latexConfig: any = {
+			debugLogging: settings.value.enableTerminalWriteLogging
+		}
+		if (settings.value.enableTerminalWriteLogging) {
+			latexConfig.onLog = (msg: string) => console.log(`[LaTeRM] ${msg}`)
+		}
+		const latexAddon = new LatexAddon(latexConfig)
+		terminal.loadAddon(latexAddon)
+
+		// Create logger (logs the processed output)
 		const logger = new TerminalWriteLogger(terminal, settings.value.enableTerminalWriteLogging, vaultPath)
 		
 		const reader = (chunk: Buffer | string): void => {
@@ -1030,8 +1035,7 @@ class UnixPseudoterminal implements Pseudoterminal {
 		terminal.loadAddon(new DisposerAddon(
 			() => { shell.stdout.removeListener("data", reader) },
 			() => { shell.stderr.removeListener("data", reader) },
-			() => { overlayManager.dispose() }, // Clean up overlay manager
-			() => { latexProcessor.dispose() }, // Clean up LaTeX processor
+			() => { latexAddon.dispose() }, // Clean up LaTeX addon
 			() => { logger.dispose() }, // Clean up logger
 		))
 		shell.stdout.on("data", reader)
