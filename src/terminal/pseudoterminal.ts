@@ -899,11 +899,13 @@ class WindowsPseudoterminal implements Pseudoterminal {
 
 		// Create and load LaTeRM addon
 		const latexConfig: any = {
-			debugLogging: settings.value.enableTerminalWriteLogging
+			debugLogging: false  // Keep LaTeX debugging off by default
 		}
-		if (settings.value.enableTerminalWriteLogging) {
-			latexConfig.onLog = (msg: string) => console.log(`[LaTeRM] ${msg}`)
-		}
+		// Uncomment to enable LaTeX debug logging when terminal logging is on:
+		// if (settings.value.enableTerminalWriteLogging) {
+		//     latexConfig.debugLogging = true
+		//     latexConfig.onLog = (msg: string) => console.log(`[LaTeRM] ${msg}`)
+		// }
 		const latexAddon = new LatexAddon(latexConfig)
 		terminal.loadAddon(latexAddon)
 
@@ -1012,11 +1014,13 @@ class UnixPseudoterminal implements Pseudoterminal {
 
 		// Create and load LaTeRM addon
 		const latexConfig: any = {
-			debugLogging: settings.value.enableTerminalWriteLogging
+			debugLogging: false  // Keep LaTeX debugging off by default
 		}
-		if (settings.value.enableTerminalWriteLogging) {
-			latexConfig.onLog = (msg: string) => console.log(`[LaTeRM] ${msg}`)
-		}
+		// Uncomment to enable LaTeX debug logging when terminal logging is on:
+		// if (settings.value.enableTerminalWriteLogging) {
+		//     latexConfig.debugLogging = true
+		//     latexConfig.onLog = (msg: string) => console.log(`[LaTeRM] ${msg}`)
+		// }
 		const latexAddon = new LatexAddon(latexConfig)
 		terminal.loadAddon(latexAddon)
 
